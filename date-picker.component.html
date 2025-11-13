@@ -1,0 +1,90 @@
+<h2>Select Exam Dates</h2>
+
+<!-- Group Name Input -->
+<mat-form-field appearance="outline" style="width: 300px; margin-bottom: 15px;">
+  <mat-label>Exam Group Name (e.g. Prelim, Midterm, Finals)</mat-label>
+  <input matInput [(ngModel)]="newGroupName" placeholder="Enter exam group name">
+</mat-form-field>
+
+<!-- Date picker inputs -->
+<div *ngFor="let day of examDays; let i = index" class="exam-day">
+  <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+    <mat-form-field appearance="outline" style="width: 200px;">
+      <mat-label>Exam Date {{ i + 1 }}</mat-label>
+      <input 
+        matInput 
+        [matDatepicker]="picker" 
+        [(ngModel)]="day.date"
+        [matDatepickerFilter]="dateFilter">
+      <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+      <mat-datepicker #picker></mat-datepicker>
+    </mat-form-field>
+
+    <mat-checkbox [(ngModel)]="day.am">AM</mat-checkbox>
+    <mat-checkbox [(ngModel)]="day.pm">PM</mat-checkbox>
+
+    <button *ngIf="examDays.length > 1" mat-icon-button color="warn" (click)="removeDay(i)">
+      <mat-icon>delete</mat-icon>
+    </button>
+  </div>
+</div>
+
+<!-- Add Day Button -->
+<div style="text-align: center; margin-top: 10px;">
+  <button mat-stroked-button color="primary" (click)="addDay()" [disabled]="examDays.length >= maxDays">
+    <mat-icon>add</mat-icon> Add Day
+  </button>
+</div>
+
+<!-- Save Button -->
+<div *ngIf="!dialogRef" style="text-align: right; margin-top: 15px;">
+  <button mat-raised-button color="primary" (click)="saveGroup()">Save Group</button>
+</div>
+
+<!-- ✅ Show saved exam groups -->
+<div *ngIf="savedExamGroups.length" style="margin-top: 30px;">
+  <h3 style="color:#1565C0;">Saved Exam Groups</h3>
+  
+  <mat-accordion>
+    <mat-expansion-panel *ngFor="let group of savedExamGroups">
+      <mat-expansion-panel-header>
+        <mat-panel-title>
+          <strong>{{ group.name }}</strong>
+        </mat-panel-title>
+        <mat-panel-description>
+          <button mat-icon-button color="primary" (click)="selectGroup(group)" matTooltip="Use this group">
+            <mat-icon>check_circle</mat-icon>
+          </button>
+          <button mat-icon-button color="warn" (click)="deleteGroup(group.name)" matTooltip="Delete this group">
+            <mat-icon>delete</mat-icon>
+          </button>
+        </mat-panel-description>
+      </mat-expansion-panel-header>
+
+      <table mat-table [dataSource]="group.days" class="mat-elevation-z1" style="width: 100%;">
+        <ng-container matColumnDef="date">
+          <th mat-header-cell *matHeaderCellDef>Date</th>
+          <td mat-cell *matCellDef="let d">{{ d.date | date:'fullDate' }}</td>
+        </ng-container>
+
+        <ng-container matColumnDef="am">
+          <th mat-header-cell *matHeaderCellDef>AM</th>
+          <td mat-cell *matCellDef="let d">
+            <mat-icon color="primary" *ngIf="d.am">check</mat-icon>
+          </td>
+        </ng-container>
+
+        <ng-container matColumnDef="pm">
+          <th mat-header-cell *matHeaderCellDef>PM</th>
+          <td mat-cell *matCellDef="let d">
+            <mat-icon color="primary" *ngIf="d.pm">check</mat-icon>
+          </td>
+        </ng-container>
+
+        <tr mat-header-row *matHeaderRowDef="['date','am','pm']"></tr>
+        <tr mat-row *matRowDef="let row; columns: ['date','am','pm'];"></tr>
+      </table>
+    </mat-expansion-panel>
+  </mat-accordion>
+</div>
+

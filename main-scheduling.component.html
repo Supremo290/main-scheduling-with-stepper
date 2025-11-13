@@ -1,0 +1,32 @@
+<mat-horizontal-stepper linear #stepper>
+  <mat-step label="Select Exam Dates">
+    <app-date-picker></app-date-picker>
+    <div style="margin-top: 10px; text-align: right;">
+      <button mat-raised-button color="primary" (click)="goNext(stepper)">Next</button>
+    </div>
+  </mat-step>
+
+  <mat-step label="Student Mapping">
+    <app-student-mapping></app-student-mapping>
+    <div style="margin-top: 10px; text-align: right;">
+      <button mat-button matStepperPrevious>Back</button>
+      <button mat-raised-button color="primary" (click)="goNext(stepper)">Next</button>
+    </div>
+  </mat-step>
+
+  <mat-step label="Room Mapping">
+    <app-room-mapping></app-room-mapping>
+    <div style="margin-top: 10px; text-align: right;">
+      <button mat-button matStepperPrevious>Back</button>
+      <button mat-raised-button color="primary" (click)="goNext(stepper)">Next</button>
+    </div>
+  </mat-step>
+
+  <mat-step label="Final Output">
+    <app-final-output></app-final-output>
+    <div style="margin-top: 10px; text-align: right;">
+      <button mat-button matStepperPrevious>Back</button>
+      <button mat-raised-button color="accent">Finish</button>
+    </div>
+  </mat-step>
+</mat-horizontal-stepper>
