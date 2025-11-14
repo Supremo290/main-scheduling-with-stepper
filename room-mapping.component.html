@@ -1,0 +1,35 @@
+<div class="room-mapping-container">
+  <h2 style="color:#0D47A1;">Room Mapping</h2>
+
+  <div style="margin-bottom: 10px;">
+    <button mat-stroked-button color="warn" (click)="clearAll()">
+      <mat-icon>delete</mat-icon> Clear All
+    </button>
+  </div>
+
+  <table border="1" cellspacing="0" cellpadding="5" style="width: 100%; border-collapse: collapse;">
+    <thead style="background-color: #1565C0; color: white;">
+      <tr>
+        <th>ROOM</th>
+        <th *ngFor="let slot of timeSlots">{{ slot }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr *ngFor="let room of roomList">
+        <td><strong>{{ room }}</strong></td>
+        <td *ngFor="let slot of timeSlots">
+          <select
+            [(ngModel)]="roomAssignments[room][slot]"
+            (change)="onAssignCode(room, slot, $event)"
+            style="width: 100px;"
+          >
+            <option value=""></option>
+            <option *ngFor="let code of getAvailableCodes()" [value]="code">
+              {{ code }}
+            </option>
+          </select>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</div>
