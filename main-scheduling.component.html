@@ -1,8 +1,10 @@
 <mat-horizontal-stepper linear #stepper>
-  <mat-step label="Select Exam Dates">
+  <mat-step [completed]="isStep1Complete()" label="Select Exam Dates">
     <app-date-picker></app-date-picker>
     <div style="margin-top: 10px; text-align: right;">
-      <button mat-raised-button color="primary" (click)="goNext(stepper)">Next</button>
+      <button mat-raised-button color="primary" (click)="goNext(stepper)" [disabled]="!isStep1Complete()">
+        Next
+      </button>
     </div>
   </mat-step>
 
@@ -26,7 +28,7 @@
     <app-final-output></app-final-output>
     <div style="margin-top: 10px; text-align: right;">
       <button mat-button matStepperPrevious>Back</button>
-      <button mat-raised-button color="accent">Finish</button>
+      <button mat-raised-button color="accent" (click)="finish()">Finish</button>
     </div>
   </mat-step>
 </mat-horizontal-stepper>
