@@ -17,12 +17,6 @@ export interface DepartmentGroup {
   loadingDepartments: string[];
 }
 
-export interface Room {
-  roomId: string;
-  roomName: string;
-  capacity: number;
-}
-
 export interface ProgramGroup {
   program: string;
   year: any | number;
@@ -41,4 +35,19 @@ export interface ProgramSchedule {
   subjects: { subjectId: string; subjectTitle: string; codeNo: string;  units: number }[];
   schedule: { [slot: string]: string };
   remainingSubjects?: number;
+}
+
+
+export interface Rooms {
+    roomNumber: string;
+    schedule: {
+        subjectId: string;
+        codeNo: string;
+        course: string;
+        yearLevel: number;
+        dept: string;
+        day: string;
+        time: string;
+        units?: number; 
+    }[];
 }

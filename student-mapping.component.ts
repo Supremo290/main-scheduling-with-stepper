@@ -468,37 +468,41 @@ export class StudentMappingComponent implements OnInit {
   //   }
   // }
 
-  getCodeSummaryReport(sy) {
-    this.api.getCodeSummaryReport(sy)
-      .map((response: any) => response.json())
-      .subscribe(
-        res => {
-          this.rawCodes = res.data;
-          Swal.close();
+ getCodeSummaryReport(sy) {
+  this.api.getCodeSummaryReport(sy)
+    .map((response: any) => response.json())
+    .subscribe(
+      res => {
+        this.rawCodes = res.data;
+        Swal.close();
 
-          this.codes = this.getUniqueSubjectIds(res.data);
-          this.programsAll = this.getUniqueProgramsAll(res.data);
-          this.programs = this.programsAll.filter(p => !(p.dept && p.dept.toUpperCase() === 'SAS'));
+        this.codes = this.getUniqueSubjectIds(res.data);
+        this.programsAll = this.getUniqueProgramsAll(res.data);
+        this.programs = this.programsAll.filter(p => !(p.dept && p.dept.toUpperCase() === 'SAS'));
 
-          for (const p of this.programsAll) {
-            if (!p.schedule) p.schedule = {};
-            p.remainingSubjects = this.getRemainingSubjects(p);
-          }
-
-          this.dataLoaded = true;
-
-          this.loadSavedScheduleForCurrentGroup();
-
-          this.updateSelectedScheduleOutput();
-          this.updateRemainingSubjectsForAll();
-          console.log("✅ Programs Loaded:", this.programsAll);
-        },
-        err => {
-          Swal.close();
-          this.global.swalAlertError(err);
+        for (const p of this.programsAll) {
+          if (!p.schedule) p.schedule = {};
+          p.remainingSubjects = this.getRemainingSubjects(p);
         }
-      );
-  }
+
+        this.dataLoaded = true;
+
+        // ✅ ADD THIS LINE - Save room data to SharedDataService
+        this.sharedData.getRoomSummary(res.data);
+        console.log("✅ Room data saved to SharedDataService:", res.data.length, "items");
+
+        this.loadSavedScheduleForCurrentGroup();
+
+        this.updateSelectedScheduleOutput();
+        this.updateRemainingSubjectsForAll();
+        console.log("✅ Programs Loaded:", this.programsAll);
+      },
+      err => {
+        Swal.close();
+        this.global.swalAlertError(err);
+      }
+    );
+}
 
   getUniqueSubjectIds(data: any[]): SubjectGroup[] {
     const groupedID: SubjectGroup[] = [];

@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
+import { Rooms } from './subject-code';
 
 interface ExamDay {
   date: Date | null;
@@ -30,6 +31,7 @@ export class SharedDataService {
   private roomMappingKey = 'roomAssignments';
   private selectedExamGroupKey = 'selectedExamGroup';
   private activeTermKey = 'activeTerm'; // ✅ NEW: Store active term
+    private roomSummaryKey = 'roomSummary';
 
   // Live data streams
   private examDatesSource = new BehaviorSubject<any[]>(this.loadFromStorage(this.examDatesKey) || []);
@@ -44,6 +46,14 @@ export class SharedDataService {
     this.loadFromStorage(this.activeTermKey)
   );
   activeTerm$ = this.activeTermSource.asObservable();
+
+    private codeSummary = new BehaviorSubject<any[]>(
+    this.loadFromStorage(this.roomSummaryKey) || []);
+  api$ = this.codeSummary.asObservable();
+
+   private finalSubjectListSource = new BehaviorSubject<any[]>([]);
+  finalSubjectList$ = this.finalSubjectListSource.asObservable();
+
 
   constructor() {}
 
@@ -201,4 +211,16 @@ export class SharedDataService {
   getAllSavedMappings(): any {
     return this.loadFromStorage(this.studentMappingByGroupKey) || {};
   }
+
+  
+ getRoomSummary(data: Rooms[]) {
+    this.saveToStorage(this.roomSummaryKey, data);
+    this.codeSummary.next(data);
+  }
+   getRoomSummaryData(): any[] {
+    return this.loadFromStorage(this.roomSummaryKey) || [];
+  }  
 }
+
+
+

@@ -1,35 +1,125 @@
 <div class="room-mapping-container">
   <h2 style="color:#0D47A1;">Room Mapping</h2>
 
-  <div style="margin-bottom: 10px;">
+  <div style="margin-bottom: 20px; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+    <label style="font-weight: 600; color: #0D47A1;">Select Exam Date:</label>
+    <mat-form-field appearance="outline" style="width: 250px;">
+      <mat-label>Exam Date</mat-label>
+      <mat-select [(ngModel)]="selectedDate" (selectionChange)="onDateChange()">
+        <mat-option *ngFor="let date of examDates" [value]="date">
+          {{ date | date: 'fullDate' }}
+        </mat-option>
+      </mat-select>
+    </mat-form-field>
+
+    <button 
+      mat-raised-button 
+      color="accent" 
+      (click)="autoAssignRooms()"
+      [disabled]="!selectedDate"
+      matTooltip="Automatically assign subjects to rooms for this date"
+    >
+      <mat-icon>auto_fix_high</mat-icon> Auto-Assign
+    </button>
+
+    <button 
+      mat-stroked-button 
+      color="warn" 
+      (click)="clearCurrentDate()"
+      [disabled]="!selectedDate"
+      matTooltip="Clear assignments for selected date only"
+    >
+      <mat-icon>clear</mat-icon> Clear This Date
+    </button>
+
+    <button mat-stroked-button color="primary" (click)="saveToLocalStorage()">
+      <mat-icon>save</mat-icon> Save
+    </button>
+    
     <button mat-stroked-button color="warn" (click)="clearAll()">
-      <mat-icon>delete</mat-icon> Clear All
+      <mat-icon>delete_sweep</mat-icon> Clear All Dates
     </button>
   </div>
 
-  <table border="1" cellspacing="0" cellpadding="5" style="width: 100%; border-collapse: collapse;">
-    <thead style="background-color: #1565C0; color: white;">
-      <tr>
-        <th>ROOM</th>
-        <th *ngFor="let slot of timeSlots">{{ slot }}</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr *ngFor="let room of roomList">
-        <td><strong>{{ room }}</strong></td>
-        <td *ngFor="let slot of timeSlots">
-          <select
-            [(ngModel)]="roomAssignments[room][slot]"
-            (change)="onAssignCode(room, slot, $event)"
-            style="width: 100px;"
-          >
-            <option value=""></option>
-            <option *ngFor="let code of getAvailableCodes()" [value]="code">
-              {{ code }}
-            </option>
-          </select>
-        </td>
-      </tr>
-    </tbody>
-  </table>
+  <div *ngIf="!selectedDate" style="padding: 20px; text-align: center; color: #999;">
+    <p>Please select an exam date to assign rooms.</p>
+  </div>
+
+  <div *ngIf="selectedDate">
+    <h3 style="color: #1565C0; margin-bottom: 15px;">
+      Room Assignments for {{ selectedDate | date: 'fullDate' }}
+    </h3>
+
+    <div style="overflow-x: auto;">
+      <table border="1" cellspacing="0" cellpadding="8" 
+             style="width: 100%; border-collapse: collapse; text-align: center;">
+        <thead style="background-color: #1565C0; color: white;">
+          <tr>
+            <th style="min-width: 100px;">ROOM</th>
+            <th *ngFor="let slot of timeSlots" style="min-width: 150px;">
+              {{ slot }}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let room of roomList">
+            <td style="font-weight: 600; background-color: #f5f5f5;">
+              {{ room }}
+              <div style="font-size: 11px; color: #666;">
+                Cap: {{ getRoomCapacity(room) }}
+              </div>
+            </td>
+            
+            <td *ngFor="let slot of timeSlots">
+              <select
+                *ngIf="roomAssignments[selectedDate] && roomAssignments[selectedDate][room]"
+                [(ngModel)]="roomAssignments[selectedDate][room][slot]"
+                (change)="onAssignCode(room, slot, $event)"
+                style="width: 140px; padding: 5px;"
+                [style.background-color]="getCurrentAssignment(room, slot) ? '#e8f5e9' : 'white'"
+              >
+                <option value="">-- Select --</option>
+                <option 
+                  *ngFor="let code of getAvailableCodesForCurrentSlot(slot)" 
+                  [value]="code"
+                >
+                  {{ code }}
+                </option>
+              </select>
+              <div 
+                *ngIf="getCurrentAssignment(room, slot)" 
+                style="font-size: 11px; color: #666; margin-top: 4px;"
+              >
+                <ng-container *ngIf="getSubjectDetailsForCode(getCurrentAssignment(room, slot), slot) as subjectDetails">
+                  <strong>{{ subjectDetails.subjectId }}</strong>
+                </ng-container>
+              </div>
+              
+
+              <div 
+                *ngIf="!getCurrentAssignment(room, slot)" 
+                style="font-size: 10px; color: #999; margin-top: 3px;"
+              >
+                {{ getAvailableCodesForCurrentSlot(slot).length }} codes
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div *ngIf="selectedDate" style="margin-top: 30px; padding: 15px; background: #f5f5f5; border-radius: 5px;">
+    <h4 style="color: #0D47A1;">Assignment Summary</h4>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+      <div>
+        <p>Total Rooms: <strong>{{ roomList.length }}</strong></p>
+        <p>Time Slots: <strong>{{ timeSlots.length }}</strong></p>
+      </div>
+      <div>
+        <p>Exam Dates: <strong>{{ examDates.length }}</strong></p>
+        <p>Current Date: <strong>{{ selectedDate | date: 'mediumDate' }}</strong></p>
+      </div>
+    </div>
+  </div>
 </div>
