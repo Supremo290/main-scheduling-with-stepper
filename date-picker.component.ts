@@ -265,20 +265,25 @@ export class DatePickerComponent implements OnInit {
   }
 
   getDateRange(days: ExamDay[]): string {
-    if (!days || days.length === 0) return '-';
+  if (!days || days.length === 0) return '-';
 
-    const sorted = [...days].sort(
-      (a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime()
-    );
+  const sorted = [...days].sort(
+    (a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime()
+  );
 
-    const dateStrings = sorted.map(d => {
-      const dt = new Date(d.date!);
-      const mm = String(dt.getMonth() + 1).padStart(2, '0');
-      const dd = String(dt.getDate()).padStart(2, '0');
-      const yy = String(dt.getFullYear()).slice(-2);
-      return `${mm}/${dd}/${yy}`;
-    });
+  const dateStrings = sorted.map(d => {
+    const dt = new Date(d.date!);
+    const mm = String(dt.getMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getDate()).padStart(2, '0');
+    const yy = String(dt.getFullYear()).slice(-2);
 
-    return dateStrings.join(', ');
-  }
+    // Get weekday name (Mon, Tue, Wed...)
+    const weekday = dt.toLocaleDateString('en-US', { weekday: 'short' });
+
+    return `${mm}/${dd}/${yy} (${weekday})`;
+  });
+
+  return dateStrings.join(', ');
+}
+
 }
