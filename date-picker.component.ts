@@ -278,7 +278,7 @@ export class DatePickerComponent implements OnInit {
     const yy = String(dt.getFullYear()).slice(-2);
 
     // Get weekday name (Mon, Tue, Wed...)
-    const weekday = dt.toLocaleDateString('en-US', { weekday: 'short' });
+    const weekday = dt.toLocaleDateString('en-US', { weekday: 'long' });
 
     return `${mm}/${dd}/${yy} (${weekday})`;
   });
