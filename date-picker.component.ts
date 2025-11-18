@@ -59,7 +59,7 @@ export class DatePickerComponent implements OnInit {
       { key: 3, value: 'Summer' },
     ];
 
-    for (let y = currentYear - 1; y <= currentYear + 1; y++) {
+    for (let y = currentYear - 2; y <= currentYear + 1; y++) {
       const nextYear = y + 1;
       for (const t of terms) {
         const label = `${t.value} ${y}-${nextYear}`;

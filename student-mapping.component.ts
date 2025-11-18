@@ -442,7 +442,7 @@ export class StudentMappingComponent implements OnInit {
 
   combineYearTerm() {
     const currentYear = new Date().getFullYear();
-    for (let y = currentYear - 1; y <= currentYear + 1; y++) {
+    for (let y = currentYear - 2; y <= currentYear + 1; y++) {
       const nextYear = y + 1;
       for (const t of this.termOptions) {
         const label = `${t.value} ${y}-${nextYear}`;
@@ -452,21 +452,21 @@ export class StudentMappingComponent implements OnInit {
     }
   }
 
-  selectTermYear() {
-    if (!this.activeTerm) {
-      this.global.swalAlertError("Please select an exam group with term from Step 1");
-      return;
-    }
+  // selectTermYear() {
+  //   if (!this.activeTerm) {
+  //     this.global.swalAlertError("Please select an exam group with term from Step 1");
+  //     return;
+  //   }
 
-    if (this.selectedDates.length === 0) {
-      this.global.swalAlertError("Please select exam dates from Step 1");
-      return;
-    }
+  //   if (this.selectedDates.length === 0) {
+  //     this.global.swalAlertError("Please select exam dates from Step 1");
+  //     return;
+  //   }
 
-    if (!this.dataLoaded) {
-      this.fetchProgramData();
-    }
-  }
+  //   if (!this.dataLoaded) {
+  //     this.fetchProgramData();
+  //   }
+  // }
 
   getCodeSummaryReport(sy) {
     this.api.getCodeSummaryReport(sy)
@@ -657,7 +657,7 @@ export class StudentMappingComponent implements OnInit {
   }
 
   goNext() {
-    this.selectTermYear();
+    // this.selectTermYear();
     
     if (this.programs.length > 0) {
       this.showTable = true;
