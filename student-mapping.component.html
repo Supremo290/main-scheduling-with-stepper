@@ -92,6 +92,18 @@
                     {{ subj.subjectId }} - {{ subj.subjectTitle }}
                   </option>
                 </select>
+
+                <!-- ✅ Display code count under selected subject -->
+                <div 
+                  *ngIf="prog.schedule[day + '_' + slot]" 
+                  style="font-size: 11px; color: #666; margin-top: 4px; padding: 2px 5px; background: #f0f0f0; border-radius: 3px; display: inline-block;"
+                >
+                  <mat-icon style="font-size: 12px; height: 12px; width: 12px; vertical-align: middle; color: #1565C0;">group</mat-icon>
+                  <span style="margin-left: 3px;">
+                    {{ getCodeCount(prog, prog.schedule[day + '_' + slot]) }} 
+                    {{ getCodeCount(prog, prog.schedule[day + '_' + slot]) === 1 ? 'code' : 'codes' }}
+                  </span>
+                </div>
               </td>
             </tr>
           </tbody>

@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, OnDestroy } from '@angular/core';
 import { ApiService } from '../api.service';
 import { GlobalService } from '../global.service';
 import { map } from 'rxjs/operators';
@@ -13,7 +13,7 @@ import { SharedDataService } from '../shared-data.service';
   templateUrl: './student-mapping.component.html',
   styleUrls: ['./student-mapping.component.scss']
 })
-export class StudentMappingComponent implements OnInit {
+export class StudentMappingComponent implements OnInit, OnDestroy {
 
   rawCodes: any[] = [];
   codes: any[] = [];
@@ -52,6 +52,7 @@ export class StudentMappingComponent implements OnInit {
   private dataLoaded: boolean = false;
   private previousExamGroupName: string = '';
   private isInitialLoad: boolean = true;
+  private isComponentActive = true;
 
   constructor(
     public api: ApiService, 
@@ -198,6 +199,11 @@ export class StudentMappingComponent implements OnInit {
     }
   }
 
+
+  ngOnDestroy() {
+    this.isComponentActive = false;
+  }
+
   private fetchProgramData() {
     if (!this.activeTerm) {
       console.log("⚠️ Cannot fetch data - no active term");
@@ -311,7 +317,13 @@ export class StudentMappingComponent implements OnInit {
       }
 
       this.updateRemainingSubjectsForAll();
-      this.cdr.detectChanges();
+      if (this.isComponentActive) {
+  try {
+    this.cdr.detectChanges();
+  } catch (e) {
+    console.warn("Change detection skipped:", e);
+  }
+}
       console.log("✅ Schedule restored successfully!");
     } else {
       console.log("ℹ️ No saved schedule found for this group");
@@ -564,6 +576,32 @@ export class StudentMappingComponent implements OnInit {
     const prev = (prog.schedule && prog.schedule[fullSlot]) ? prog.schedule[fullSlot] : '';
     this.prevSelection[fullSlot] = prev;
   }
+
+
+
+getCodeCount(prog: ProgramSchedule, subjectId: string): number {
+  if (!subjectId || !prog || !prog.subjects) {
+    return 0;
+  }
+
+  // Find the subject in the program's subject list
+  const subject = prog.subjects.find(s => s.subjectId === subjectId);
+  
+  if (!subject) {
+    return 0;
+  }
+
+  // Count codes from the codes array in SubjectGroup
+  // The subject might have multiple codes (sections)
+  const subjectGroup = this.codes.find(c => c.subjectId === subjectId);
+  
+  if (subjectGroup && subjectGroup.codes) {
+    return subjectGroup.codes.length;
+  }
+
+  // Default: assume 1 code if subject exists but no codes array found
+  return 1;
+}
 
   getAvailableSubjects(prog: ProgramSchedule, fullSlot: string) {
     const selectedSubjectIds = new Set<string>();
