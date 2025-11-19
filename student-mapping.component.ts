@@ -838,4 +838,405 @@ getCodeCount(prog: ProgramSchedule, subjectId: string): number {
     
     return `${termMap[termCode] || 'Unknown'} ${year1}-${year2}`;
   }
+
+
+
+ autoAssignSchedule() {
+  if (!this.activeTerm || this.selectedDates.length === 0) {
+    this.global.swalAlertError("Please select term and exam dates first.");
+    return;
+  }
+
+  // Check if programs are loaded
+  if (!this.programsAll || this.programsAll.length === 0) {
+    this.global.swalAlertError("Program data not loaded. Please ensure programs are loaded first.");
+    return;
+  }
+
+  // Show confirmation dialog
+  this.swal.fire({
+    title: 'Auto-Assign Schedule?',
+    html: `<p>This will automatically assign all subjects to available time slots.</p>
+           <p><strong>Any existing assignments will be cleared.</strong></p>`,
+    type: 'warning',
+    showCancelButton: true,
+    confirmButtonText: 'Yes, auto-assign',
+    cancelButtonText: 'Cancel'
+  }).then((result) => {
+    if (result.value) {
+      this.performImprovedAutoAssignment();
+    }
+  });
 }
+
+private performImprovedAutoAssignment() {
+  console.log("🚀 Starting improved auto-assignment...");
+  
+  this.swal.fire({
+    title: 'Processing',
+    text: 'Assigning subjects to time slots...',
+    type: 'info',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    onOpen: () => {
+      Swal.showLoading();
+    }
+  });
+
+  try {
+    // Clear all existing schedules
+    for (const prog of this.programsAll) {
+      prog.schedule = {};
+    }
+
+    console.log("📊 Programs:", this.programsAll.length);
+    console.log("📅 Dates:", this.selectedDates.length);
+    console.log("⏰ Total slots available:", this.calculateTotalSlots());
+
+    // Step 1: Categorize subjects
+    const subjectGroups = this.groupSubjectsBySharedId();
+    console.log("✅ Grouped subjects:", subjectGroups.size);
+    
+    // Step 2: Sort subjects by priority
+    const sortedSubjects = this.prioritizeSubjectsImproved(subjectGroups);
+    console.log("✅ Prioritized subjects:", sortedSubjects.length);
+    
+    // Step 3: Distribute subjects across days evenly
+    const success = this.distributeSubjectsAcrossDays(sortedSubjects);
+    
+    Swal.close();
+    
+    setTimeout(() => {
+      const assignedCount = this.countAssignedSubjects(sortedSubjects);
+      
+      this.updateSelectedScheduleOutput();
+      this.updateRemainingSubjectsForAll();
+      this.autoSaveSchedule();
+      
+      if (assignedCount === sortedSubjects.length) {
+        this.global.swalSuccess(`✅ All ${sortedSubjects.length} subjects assigned successfully!`);
+      } else {
+        this.swal.fire({
+          title: 'Partial Assignment',
+          html: `<p><strong>${assignedCount}</strong> out of <strong>${sortedSubjects.length}</strong> subjects assigned.</p>
+                 <p style="color: #f57c00;">Some subjects could not be scheduled. This may be due to:</p>
+                 <ul style="text-align: left; margin-left: 40px;">
+                   <li>Insufficient time slots for the number of subjects</li>
+                   <li>6-unit subjects requiring consecutive slots</li>
+                   <li>Conflicts in program schedules</li>
+                 </ul>
+                 <p><strong>Suggestion:</strong> Add more exam dates or adjust time slots (AM/PM).</p>`,
+          type: 'warning',
+          confirmButtonText: 'OK'
+        });
+      }
+    }, 100);
+    
+  } catch (error) {
+    Swal.close();
+    console.error("❌ Error:", error);
+    
+    setTimeout(() => {
+      this.global.swalAlertError(`Error: ${error.message || 'Unknown error'}`);
+    }, 100);
+  }
+}
+
+// Calculate total available slots
+private calculateTotalSlots(): number {
+  let total = 0;
+  for (const day of this.selectedDates) {
+    const slots = this.daysWithTimeSlots[day] || [];
+    total += slots.length;
+  }
+  return total;
+}
+
+// Count how many subjects were successfully assigned
+private countAssignedSubjects(sortedSubjects: Array<any>): number {
+  let count = 0;
+  for (const subject of sortedSubjects) {
+    const isAssigned = this.programsAll.some(prog => 
+      Object.values(prog.schedule || {}).includes(subject.subjectId)
+    );
+    if (isAssigned) count++;
+  }
+  return count;
+}
+
+// Improved subject prioritization
+private prioritizeSubjectsImproved(
+  subjectGroups: Map<string, ProgramSchedule[]>
+): Array<{subjectId: string, programs: ProgramSchedule[], units: number, programCount: number}> {
+  
+  const subjects: Array<any> = [];
+  
+  for (const [subjectId, programs] of subjectGroups.entries()) {
+    const subjectData = programs[0].subjects.find(s => s.subjectId === subjectId);
+    const units = subjectData ? subjectData.units : 3;
+    
+    subjects.push({ 
+      subjectId, 
+      programs, 
+      units,
+      programCount: programs.length
+    });
+  }
+  
+  // Sort by:
+  // 1. 6-unit subjects first (harder to place)
+  // 2. More programs sharing the subject (efficiency)
+  // 3. Subject ID for consistency
+  subjects.sort((a, b) => {
+    if (a.units !== b.units) return b.units - a.units;
+    if (a.programCount !== b.programCount) return b.programCount - a.programCount;
+    return a.subjectId.localeCompare(b.subjectId);
+  });
+  
+  console.log("📊 Subject distribution:");
+  console.log("   - 6-unit subjects:", subjects.filter(s => s.units === 6).length);
+  console.log("   - 3-unit subjects:", subjects.filter(s => s.units === 3).length);
+  console.log("   - Shared subjects (10+ programs):", subjects.filter(s => s.programCount >= 10).length);
+  
+  return subjects;
+}
+
+// Distribute subjects across days evenly with flexible constraints
+private distributeSubjectsAcrossDays(sortedSubjects: Array<any>): boolean {
+  const assignedSubjects = new Set<string>();
+  
+  // Track how many subjects each program has per day
+  const programDayCount = new Map<string, Map<string, number>>();
+  
+  // Initialize tracking
+  for (const prog of this.programsAll) {
+    const key = `${prog.program}_${prog.year}`;
+    programDayCount.set(key, new Map());
+    
+    for (const day of this.selectedDates) {
+      programDayCount.get(key)!.set(day, 0);
+    }
+  }
+  
+  // Try to assign each subject
+  for (const subject of sortedSubjects) {
+    if (assignedSubjects.has(subject.subjectId)) continue;
+    
+    const assignment = this.findBestSlotFlexible(
+      subject,
+      programDayCount,
+      assignedSubjects
+    );
+    
+    if (assignment) {
+      // Assign to all programs that have this subject
+      for (const prog of subject.programs) {
+        const { day, slot } = assignment;
+        const fullSlot = `${day}_${slot}`;
+        prog.schedule[fullSlot] = subject.subjectId;
+        
+        // If 6 units, assign next slot too
+        if (subject.units === 6) {
+          const nextSlot = this.getNextSlot(day, slot);
+          if (nextSlot) {
+            prog.schedule[`${day}_${nextSlot}`] = subject.subjectId;
+          }
+        }
+        
+        // Update day count
+        const progKey = `${prog.program}_${prog.year}`;
+        const currentCount = programDayCount.get(progKey)!.get(day)! + 1;
+        programDayCount.get(progKey)!.set(day, currentCount);
+      }
+      
+      assignedSubjects.add(subject.subjectId);
+      console.log(`✅ Assigned ${subject.subjectId} (${subject.units}u) to ${assignment.day} ${assignment.slot}`);
+    } else {
+      console.warn(`⚠️ Could not assign ${subject.subjectId} (${subject.units}u, ${subject.programCount} programs)`);
+    }
+  }
+  
+  console.log(`\n📊 Final Stats:`);
+  console.log(`   - Assigned: ${assignedSubjects.size}/${sortedSubjects.length} subjects`);
+  console.log(`   - Success rate: ${Math.round(assignedSubjects.size / sortedSubjects.length * 100)}%`);
+  
+  return assignedSubjects.size === sortedSubjects.length;
+}
+
+// Find best slot with flexible constraints
+private findBestSlotFlexible(
+  subject: any,
+  programDayCount: Map<string, Map<string, number>>,
+  assignedSubjects: Set<string>
+): {day: string, slot: string} | null {
+  
+  // Strategy: Try days with least load first, then try all slots
+  const dayLoadScores: Array<{day: string, load: number}> = [];
+  
+  for (const day of this.selectedDates) {
+    let totalLoad = 0;
+    for (const prog of subject.programs) {
+      const progKey = `${prog.program}_${prog.year}`;
+      totalLoad += programDayCount.get(progKey)!.get(day)!;
+    }
+    dayLoadScores.push({ day, load: totalLoad });
+  }
+  
+  // Sort by load (lowest first) to balance across days
+  dayLoadScores.sort((a, b) => a.load - b.load);
+  
+  // Try each day starting with least loaded
+  for (const {day} of dayLoadScores) {
+    const availableSlots = this.daysWithTimeSlots[day] || [];
+    
+    // Try each slot in order
+    for (let i = 0; i < availableSlots.length; i++) {
+      const slot = availableSlots[i];
+      
+      if (this.canAssignToSlotFlexible(subject, day, slot, availableSlots, programDayCount)) {
+        return { day, slot };
+      }
+    }
+  }
+  
+  // If no slot found with constraints, try without day limit
+  for (const day of this.selectedDates) {
+    const availableSlots = this.daysWithTimeSlots[day] || [];
+    
+    for (let i = 0; i < availableSlots.length; i++) {
+      const slot = availableSlots[i];
+      
+      // More relaxed check - just check if slot is free
+      if (this.canAssignToSlotMinimal(subject, day, slot, availableSlots)) {
+        console.log(`ℹ️ ${subject.subjectId} assigned without day limit constraint`);
+        return { day, slot };
+      }
+    }
+  }
+  
+  return null;
+}
+
+// Check if subject can be assigned with flexible constraints
+private canAssignToSlotFlexible(
+  subject: any,
+  day: string,
+  slot: string,
+  availableSlots: string[],
+  programDayCount: Map<string, Map<string, number>>
+): boolean {
+  
+  const slotIndex = availableSlots.indexOf(slot);
+  
+  for (const prog of subject.programs) {
+    const progKey = `${prog.program}_${prog.year}`;
+    const fullSlot = `${day}_${slot}`;
+    
+    // Check if slot is occupied
+    if (prog.schedule[fullSlot]) {
+      return false;
+    }
+    
+    // Check 6-unit needs 2 consecutive slots
+    if (subject.units === 6) {
+      if (slotIndex + 1 >= availableSlots.length) {
+        return false;
+      }
+      const nextSlot = availableSlots[slotIndex + 1];
+      if (prog.schedule[`${day}_${nextSlot}`]) {
+        return false;
+      }
+    }
+    
+    // Flexible day limit - allow up to 5 subjects per day instead of 4
+    const currentDayCount = programDayCount.get(progKey)!.get(day)!;
+    if (currentDayCount >= 5) {
+      return false;
+    }
+  }
+  
+  return true;
+}
+
+// Minimal constraint check - only check if slots are free
+private canAssignToSlotMinimal(
+  subject: any,
+  day: string,
+  slot: string,
+  availableSlots: string[]
+): boolean {
+  
+  const slotIndex = availableSlots.indexOf(slot);
+  
+  for (const prog of subject.programs) {
+    const fullSlot = `${day}_${slot}`;
+    
+    // Check if slot is occupied
+    if (prog.schedule[fullSlot]) {
+      return false;
+    }
+    
+    // Check 6-unit needs 2 consecutive slots
+    if (subject.units === 6) {
+      if (slotIndex + 1 >= availableSlots.length) {
+        return false;
+      }
+      const nextSlot = availableSlots[slotIndex + 1];
+      if (prog.schedule[`${day}_${nextSlot}`]) {
+        return false;
+      }
+    }
+  }
+  
+  return true;
+}
+
+// Helper: Group subjects by shared ID (keep existing)
+private groupSubjectsBySharedId(): Map<string, ProgramSchedule[]> {
+  const subjectGroups = new Map<string, ProgramSchedule[]>();
+  for (const prog of this.programsAll) {
+    for (const subj of prog.subjects) {
+      if (!subjectGroups.has(subj.subjectId)) {
+        subjectGroups.set(subj.subjectId, []);
+      }
+      subjectGroups.get(subj.subjectId)!.push(prog);
+    }
+  }
+  return subjectGroups;
+}
+
+// Helper: Get next slot (keep existing)
+private getNextSlot(day: string, currentSlot: string): string | null {
+  const slots = this.daysWithTimeSlots[day] || [];
+  const currentIndex = slots.indexOf(currentSlot);
+  if (currentIndex >= 0 && currentIndex + 1 < slots.length) {
+    return slots[currentIndex + 1];
+  }
+  return null;
+}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
