@@ -30,6 +30,10 @@ export class RoomMappingComponent implements OnInit {
   finalSchedule: any[] = [];
   selectedScheduleOutput: any[] = [];
   
+  // ✅ ADD: Track current exam group and term
+  currentExamGroupName: string = '';
+  activeTerm: string = '';
+  
   roomList: string[] = [];
   excludedRooms: string[] = [
     'B-11', 'B-12','BTL -','BUL -','HL','J-42','J-43','J-44','J-45','J-46','J-48','K-13',
@@ -59,35 +63,57 @@ export class RoomMappingComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    // Load student mapping data from SharedDataService
-    const storedStudentMapping = this.sharedData.getStudentMapping();
-    if (storedStudentMapping) {
-      this.selectedScheduleOutput = storedStudentMapping;
-      
-      this.extractExamDates();
-      this.buildAvailableCodesCache();
+    console.log("🚀 Room Mapping Component Initialized");
+    
+    // ✅ FIX 1: Get current exam group and term
+    const currentGroup = this.sharedData.getSelectedExamGroup();
+    if (currentGroup) {
+      this.currentExamGroupName = currentGroup.name;
+      console.log("📋 Current exam group:", this.currentExamGroupName);
     }
+
+    const savedTerm = this.sharedData.getActiveTerm();
+    if (savedTerm) {
+      this.activeTerm = savedTerm;
+      console.log("📅 Current term:", this.activeTerm);
+    }
+
+    // ✅ FIX 2: Load student mapping for the current group
+    this.loadStudentMappingData();
+
+    // ✅ FIX 3: Subscribe to exam group changes
+    this.sharedData.selectedExamGroup$.subscribe((group) => {
+      if (group && group.name !== this.currentExamGroupName) {
+        console.log("🔄 Exam group changed to:", group.name);
+        this.currentExamGroupName = group.name;
+        this.loadStudentMappingData();
+      }
+    });
+
+    // ✅ FIX 4: Subscribe to term changes
+    this.sharedData.activeTerm$.subscribe((term) => {
+      if (term && term !== this.activeTerm) {
+        console.log("🔄 Term changed to:", term);
+        this.activeTerm = term;
+        this.loadStudentMappingData();
+      }
+    });
 
     // Load room summary data
     const storedRoomData = this.sharedData.getRoomSummaryData();
     if (storedRoomData && storedRoomData.length) {
+      console.log("✅ Loaded room data:", storedRoomData.length, "rooms");
       this.codes = storedRoomData;
       this.extractRoomsData();
     }
 
     // Load saved room assignments
-    const storedRooms = this.sharedData.getRoomMapping();
-    if (storedRooms) {
-      this.roomAssignments = storedRooms;
-    } else {
-      if (this.roomList.length > 0 && this.examDates.length > 0) {
-        this.initializeRoomAssignments();
-      }
-    }
+    this.loadRoomAssignments();
 
     // Subscribe to room summary updates
     this.sharedData.api$.subscribe(data => {
       if (data && data.length) {
+        console.log("🔄 Room data updated:", data.length, "items");
         this.codes = data;
         this.extractRoomsData();
         
@@ -98,9 +124,76 @@ export class RoomMappingComponent implements OnInit {
     });
   }
 
+  // ✅ NEW METHOD: Load student mapping data for current group
+  private loadStudentMappingData() {
+    if (!this.currentExamGroupName || !this.activeTerm) {
+      console.warn("⚠️ Cannot load student mapping - missing group name or term");
+      console.log("   Group:", this.currentExamGroupName);
+      console.log("   Term:", this.activeTerm);
+      return;
+    }
+
+    console.log("📖 Loading student mapping for:", this.currentExamGroupName, this.activeTerm);
+
+    // Try to load from group-specific storage first
+    const groupMapping = this.sharedData.getStudentMappingForGroup(
+      this.currentExamGroupName,
+      this.activeTerm
+    );
+
+    if (groupMapping && groupMapping.length > 0) {
+      console.log("✅ Loaded group-specific student mapping:", groupMapping.length, "days");
+      this.selectedScheduleOutput = groupMapping;
+    } else {
+      // Fallback to global storage
+      const globalMapping = this.sharedData.getStudentMapping();
+      if (globalMapping && globalMapping.length > 0) {
+        console.log("✅ Loaded global student mapping:", globalMapping.length, "days");
+        this.selectedScheduleOutput = globalMapping;
+      } else {
+        console.warn("⚠️ No student mapping data found");
+        this.selectedScheduleOutput = [];
+      }
+    }
+
+    if (this.selectedScheduleOutput.length > 0) {
+      console.log("📊 Student mapping data:", this.selectedScheduleOutput);
+      this.extractExamDates();
+      this.buildAvailableCodesCache();
+      this.loadRoomAssignments();
+    }
+  }
+
+  // ✅ UPDATED METHOD: Load room assignments for current group
+  private loadRoomAssignments() {
+    if (!this.currentExamGroupName || !this.activeTerm) {
+      console.warn("⚠️ Cannot load room assignments - missing group name or term");
+      return;
+    }
+
+    // Try to load group-specific room assignments
+    const storedRooms = this.sharedData.getRoomMappingForGroup(
+      this.currentExamGroupName,
+      this.activeTerm
+    );
+
+    if (storedRooms && Object.keys(storedRooms).length > 0) {
+      console.log("✅ Loaded saved room assignments for group");
+      this.roomAssignments = storedRooms;
+    } else {
+      // Initialize empty assignments
+      if (this.roomList.length > 0 && this.examDates.length > 0) {
+        console.log("🔧 Initializing new room assignments");
+        this.initializeRoomAssignments();
+      }
+    }
+  }
+
   extractExamDates() {
     if (!this.selectedScheduleOutput || !this.selectedScheduleOutput.length) {
       console.warn('⚠️ No student mapping available to extract dates');
+      this.examDates = [];
+      this.selectedDate = '';
       return;
     }
 
@@ -108,6 +201,7 @@ export class RoomMappingComponent implements OnInit {
     
     if (this.examDates.length > 0 && !this.selectedDate) {
       this.selectedDate = this.examDates[0];
+      console.log("✅ Auto-selected first date:", this.selectedDate);
     }
 
     console.log('📅 Extracted exam dates:', this.examDates);
@@ -262,7 +356,8 @@ export class RoomMappingComponent implements OnInit {
       });
     });
 
-    this.sharedData.setRoomMapping(this.roomAssignments);
+    // ✅ FIX: Save with group and term
+    this.saveRoomAssignments();
     this.global.swalSuccess('✅ Auto-assigned ' + assignedCodes.size + ' codes to rooms!');
   }
 
@@ -289,7 +384,7 @@ export class RoomMappingComponent implements OnInit {
       });
     });
 
-    this.sharedData.setRoomMapping(this.roomAssignments);
+    this.saveRoomAssignments();
     this.global.swalSuccess('Cleared assignments for selected date!');
   }
 
@@ -314,7 +409,6 @@ export class RoomMappingComponent implements OnInit {
       if (item.roomNumber && item.roomNumber.trim() !== '') {
         const roomNumber = item.roomNumber.trim();
         
-        // Only add if NOT in exclusion list
         if (!this.excludedRooms.includes(roomNumber)) {
           roomSet.add(roomNumber);
         }
@@ -336,39 +430,7 @@ export class RoomMappingComponent implements OnInit {
     });
 
     this.roomList = this.uniqueRooms;
-    console.log("🚫 Excluded Rooms:", this.excludedRooms);
-    console.log("✅ Displaying Rooms:", this.roomList);
-  }
-
-  removeFromExclusion(room: string) {
-    const index = this.excludedRooms.indexOf(room);
-    if (index > -1) {
-      this.excludedRooms.splice(index, 1);
-      console.log('✅ Removed', room, 'from exclusion - it will now appear in the table');
-      
-      this.extractRoomsData();
-    }
-  }
-  
-  addToExclusion(room: string) {
-    if (!this.excludedRooms.includes(room)) {
-      this.excludedRooms.push(room);
-      console.log('🚫 Added', room, 'to exclusion - it will be hidden from the table');
-      
-      this.extractRoomsData();
-    }
-  }
-  
-  clearAllExclusions() {
-    const previousCount = this.excludedRooms.length;
-    this.excludedRooms = [];
-    console.log('✅ Cleared all exclusions - all', previousCount, 'rooms will now be displayed');
-    
-    this.extractRoomsData();
-  }
-  
-  isRoomExcluded(room: string): boolean {
-    return this.excludedRooms.includes(room);
+    console.log("✅ Displaying Rooms:", this.roomList.length);
   }
 
   groupDataByRoom(data: any[]): Rooms[] {
@@ -442,7 +504,7 @@ export class RoomMappingComponent implements OnInit {
     }
     
     this.roomAssignments[this.selectedDate][room][slot] = event.target.value;
-    this.sharedData.setRoomMapping(this.roomAssignments);
+    this.saveRoomAssignments();
     console.log('✅ Assigned code to', room, slot, 'on', this.selectedDate, ':', event.target.value);
   }
 
@@ -479,27 +541,26 @@ export class RoomMappingComponent implements OnInit {
     };
   }
 
-  displayAllRoomsInfo() {
-    console.log("=== ALL ROOMS INFORMATION ===");
-    
-    this.roomList.forEach(roomNumber => {
-      const details = this.getRoomDetails(roomNumber);
-      console.log('Room: ' + details.roomNumber);
-      console.log('Capacity: ' + details.capacity);
-      console.log('Total Schedules: ' + details.totalSchedules);
-      console.log('---');
-    });
-  }
+  // ✅ UPDATED: Save room assignments with group and term
+  private saveRoomAssignments() {
+    if (!this.currentExamGroupName || !this.activeTerm) {
+      console.warn("⚠️ Cannot save - missing group name or term");
+      return;
+    }
 
-  getRoomsWithCapacity(): { room: string, capacity: number }[] {
-    return this.roomList.map(room => ({
-      room: room,
-      capacity: this.getRoomCapacity(room)
-    }));
+    console.log("💾 Saving room assignments for:", this.currentExamGroupName, this.activeTerm);
+    
+    this.sharedData.setRoomMappingForGroup(
+      this.currentExamGroupName,
+      this.activeTerm,
+      this.roomAssignments
+    );
+    
+    console.log("✅ Room assignments saved");
   }
 
   saveToLocalStorage() {
-    this.sharedData.setRoomMapping(this.roomAssignments);
+    this.saveRoomAssignments();
     this.global.swalSuccess('Room assignments saved successfully!');
   }
 
@@ -522,7 +583,7 @@ export class RoomMappingComponent implements OnInit {
       });
     });
 
-    this.saveToLocalStorage();
+    this.saveRoomAssignments();
     this.global.swalSuccess('Cleared all room assignments!');
   }
 
@@ -553,3 +614,39 @@ export class RoomMappingComponent implements OnInit {
     return null;
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

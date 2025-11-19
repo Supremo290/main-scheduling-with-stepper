@@ -220,6 +220,26 @@ export class SharedDataService {
    getRoomSummaryData(): any[] {
     return this.loadFromStorage(this.roomSummaryKey) || [];
   }  
+
+
+// Room Mapping - Group Specific
+setRoomMappingForGroup(groupName: string, term: string, data: any) {
+  const key = `room_mapping_${groupName}_${term}`;
+  localStorage.setItem(key, JSON.stringify(data));
+  console.log(`💾 Saved room mapping for ${groupName} (${term})`);
+}
+
+getRoomMappingForGroup(groupName: string, term: string): any {
+  const key = `room_mapping_${groupName}_${term}`;
+  const data = localStorage.getItem(key);
+  if (data) {
+    console.log(`📖 Loaded room mapping for ${groupName} (${term})`);
+    return JSON.parse(data);
+  }
+  return null;
+}
+
+
 }
 
 
