@@ -82,9 +82,10 @@ export class ExamSchedulerComponent implements OnInit {
   
   activeTerm: string = '';
   combinedOptions: { label: string, value: string }[] = [];
+  // ✅ FIXED: Changed to "Semester" but VALUE will be numeric code
   termOptions = [
-    { key: 1, value: '1st Term' },
-    { key: 2, value: '2nd Term' },
+    { key: 1, value: '1st Semester' },
+    { key: 2, value: '2nd Semester' },
     { key: 3, value: 'Summer' },
   ];
   
@@ -130,38 +131,46 @@ export class ExamSchedulerComponent implements OnInit {
     private sharedData: SharedDataService
   ) {}
 
-  ngOnInit() {
-    this.activeDay = this.days[0];
-    this.roomTimeData.days = [...this.days];
-    this.courseGridData.days = [...this.days];
-    this.courseGridData.courses = [];
-    
-    this.combineYearTerm();
-    
-    this.loadSavedExamGroups();
-    
-    this.sharedData.selectedExamGroup$.subscribe(group => {
-      if (group) {
-        this.selectedExamGroup = group;
-        this.examDates = group.days.map(d => 
-          d.date ? new Date(d.date).toLocaleDateString('en-CA') : ''
-        );
-        this.activeTerm = group.termYear || '';
-        console.log('✅ Selected exam group:', group.name);
-      }
-    });
-    
-    if (this.hasSavedData()) {
-      this.showRestorePrompt();
+ngOnInit() {
+  this.activeDay = this.days[0];
+  this.roomTimeData.days = [...this.days];
+  this.courseGridData.days = [...this.days];
+  this.courseGridData.courses = [];
+  
+  this.combineYearTerm();
+  
+  // ✅ CLEAR SELECTION ON PAGE REFRESH
+  this.sharedData.clearSelectedExamGroup();
+  this.sharedData.clearExamDates();
+  this.sharedData.clearActiveTerm();
+  this.selectedExamGroup = null;
+  
+  this.loadSavedExamGroups();
+  
+  // Subscribe to future group selections (but don't restore on refresh)
+  this.sharedData.selectedExamGroup$.subscribe(group => {
+    if (group) {
+      this.selectedExamGroup = group;
+      this.examDates = group.days.map(d => 
+        d.date ? new Date(d.date).toLocaleDateString('en-CA') : ''
+      );
+      this.activeTerm = group.termYear || '';
+      console.log('✅ Selected exam group:', group.name);
     }
+  });
+  
+  if (this.hasSavedData()) {
+    this.showRestorePrompt();
   }
+}
 
   combineYearTerm() {
     const currentYear = new Date().getFullYear();
     for (let y = currentYear - 1; y <= currentYear + 1; y++) {
       const nextYear = y + 1;
       for (const t of this.termOptions) {
-        const label = `${t.value} ${y}-${nextYear}`;
+        // ✅ FIXED: Label shows "Semester SY" but value is numeric code for API
+        const label = `${t.value} SY ${y}-${nextYear}`;
         const value = `${y}${nextYear.toString().slice(-2)}${t.key}`;
         this.combinedOptions.push({ label, value });
       }
@@ -198,54 +207,69 @@ export class ExamSchedulerComponent implements OnInit {
   }
 
   loadExamData() {
-    if (!this.activeTerm) {
-      this.global.swalAlertError('Please select a term/year first');
-      return;
-    }
-
-    this.loadSwal();
-    
-    this.api.getCodeSummaryReport(this.activeTerm)
-      .map((response: any) => response.json())
-      .subscribe(
-        res => {
-          this.rawCodes = res.data;
-          Swal.close();
-
-          const parsedExams: Exam[] = this.rawCodes.map((obj: any) => ({
-            code: obj.codeNo || '',
-            version: obj.version || '',
-            subjectId: obj.subjectId || '',
-            title: obj.subjectTitle || '',
-            course: (obj.course || '').trim(),
-            yearLevel: obj.yearLevel !== undefined && obj.yearLevel !== null ? obj.yearLevel : 1,
-            lec: parseInt(obj.lecUnits || 3),
-            oe: parseInt(obj.labUnits || 0),
-            dept: obj.dept || '',
-            instructor: obj.instructor || ''
-          }));
-
-          this.exams = parsedExams;
-          this.rooms = this.getUniqueRooms(res.data);
-          
-          this.extractRoomCapacities(res.data);
-          
-          this.categorizeSubjects();
-          
-          if (this.rooms.length === 0) {
-            this.rooms = ['A', 'C', 'K', 'L', 'M', 'N'];
-          }
-          
-          this.sharedData.getRoomSummary(res.data);
-          
-          this.showToast('Success', `${parsedExams.length} exams loaded from API`);
-        },
-        err => {
-          Swal.close();
-          this.global.swalAlertError(err);
-        }
-      );
+  if (!this.activeTerm) {
+    this.global.swalAlertError('Please select a term/year first');
+    return;
   }
+
+  console.log('🔄 Loading exam data for term:', this.activeTerm);
+  console.log('📅 Selected exam group:', this.selectedExamGroup);
+
+  this.loadSwal();
+  
+  // ✅ API receives numeric code like "2023241"
+  this.api.getCodeSummaryReport(this.activeTerm)
+    .map((response: any) => response.json())
+    .subscribe(
+      res => {
+        console.log('📥 API Response:', res);
+        
+        this.rawCodes = res.data;
+        Swal.close();
+
+        const parsedExams: Exam[] = this.rawCodes.map((obj: any) => ({
+          code: obj.codeNo || '',
+          version: obj.version || '',
+          subjectId: obj.subjectId || '',
+          title: obj.subjectTitle || '',
+          course: (obj.course || '').trim(),
+          yearLevel: obj.yearLevel !== undefined && obj.yearLevel !== null ? obj.yearLevel : 1,
+          lec: parseInt(obj.lecUnits || 3),
+          oe: parseInt(obj.labUnits || 0),
+          dept: obj.dept || '',
+          instructor: obj.instructor || ''
+        }));
+
+        this.exams = parsedExams;
+        
+        console.log('✅ Parsed exams:', this.exams.length);
+        console.log('🏢 Before getUniqueRooms, rawCodes:', this.rawCodes.length);
+        
+        this.rooms = this.getUniqueRooms(res.data);
+        
+        console.log('🏢 Rooms extracted:', this.rooms.length, this.rooms);
+        
+        this.extractRoomCapacities(res.data);
+        this.categorizeSubjects();
+        
+        if (this.rooms.length === 0) {
+          console.warn('⚠️ No rooms found, using fallback');
+          this.rooms = ['A', 'C', 'K', 'L', 'M', 'N'];
+        }
+        
+        this.sharedData.getRoomSummary(res.data);
+        
+        this.cdr.detectChanges();
+        
+        this.showToast('Success', `${parsedExams.length} exams loaded from API`);
+      },
+      err => {
+        Swal.close();
+        console.error('❌ API Error:', err);
+        this.global.swalAlertError(err);
+      }
+    );
+}
 
   extractRoomCapacities(data: any[]) {
     this.roomCapacities.clear();
@@ -286,25 +310,38 @@ export class ExamSchedulerComponent implements OnInit {
   }
 
   getUniqueRooms(data: any[]): string[] {
-    const roomSet = new Set<string>();
-    const excludedRooms = [
-      'B-11', 'B-12','BTL -','BUL -','HL','J-42','J-43','J-44','J-45','J-46','J-48','K-13',
-      'K-14','K-22','K-24','K-41','L-23','M-21','M-31','M-33','M-43','MChem','MLab1','MLab2',
-      'Nutri','SMTL','A-102','A-203','A-204','A-205','A-219','A-221','A-225','A-226','A-234',
-      'A-302','A-306','A-308','A-309','A-310','A-311','A-312','DemoR','Pharm', 'TBA', 'to be', 
-      'Virtu', 'EMC', 'Field', 'Hosp', 'Molec'
-    ];
-    
-    data.forEach(item => {
-      if (item.roomNumber || item.ROOM_NUMBER || item.ROOM) {
-        const room = (item.roomNumber || item.ROOM_NUMBER || item.ROOM).trim();
-        if (!excludedRooms.includes(room)) {
-          roomSet.add(room);
-        }
+  const roomSet = new Set<string>();
+  const excludedRooms = [
+    'B-11', 'B-12','BTL -','BUL -','HL','J-42','J-43','J-44','J-45','J-46','J-48','K-13',
+    'K-14','K-22','K-24','K-41','L-23','M-21','M-31','M-33','M-43','MChem','MLab1','MLab2',
+    'Nutri','SMTL','A-102','A-203','A-204','A-205','A-219','A-221','A-225','A-226','A-234',
+    'A-302','A-306','A-308','A-309','A-310','A-311','A-312','DemoR','Pharm', 'TBA', 'to be', 
+    'Virtu', 'EMC', 'Field', 'Hosp', 'Molec'
+  ];
+  
+  console.log('📊 Total records in API data:', data.length);
+  
+  data.forEach(item => {
+    if (item.roomNumber || item.ROOM_NUMBER || item.ROOM) {
+      const room = (item.roomNumber || item.ROOM_NUMBER || item.ROOM).trim();
+      
+      if (!roomSet.has(room)) {
+        console.log('🏢 Found room:', room);
       }
-    });
-    return Array.from(roomSet).sort();
-  }
+      
+      if (!excludedRooms.includes(room)) {
+        roomSet.add(room);
+      } else {
+        console.log('❌ Excluded room:', room);
+      }
+    }
+  });
+  
+  const finalRooms = Array.from(roomSet).sort();
+  console.log('✅ Final rooms after filtering:', finalRooms);
+  
+  return finalRooms;
+}
 
   loadSwal() {
     Swal.fire({
@@ -779,7 +816,6 @@ export class ExamSchedulerComponent implements OnInit {
         const dayCountMap = dayCount.get(key);
         const targetArr = targets.get(key);
         
-        // ✅ FIXED: Replace optional chaining
         const current = (dayCountMap && dayCountMap.get(day)) || 0;
         const target = (targetArr && targetArr[i]) || 4;
         
@@ -836,7 +872,6 @@ export class ExamSchedulerComponent implements OnInit {
     for (const exam of subject.exams) {
       const key = `${exam.course}_${exam.yearLevel}`;
       
-      // ✅ FIXED: Replace optional chaining
       const dayCountMap = dayCount.get(key);
       const count = (dayCountMap && dayCountMap.get(day)) || 0;
       if (count >= maxPerDay) {
@@ -953,7 +988,6 @@ export class ExamSchedulerComponent implements OnInit {
         
         const key = `${exam.course}_${exam.yearLevel}`;
         
-        // ✅ FIXED: Replace optional chaining
         const dayCountMap = dayCount.get(key);
         if (dayCountMap) {
           const count = dayCountMap.get(day) || 0;
@@ -1010,7 +1044,6 @@ export class ExamSchedulerComponent implements OnInit {
 
     const blob = new Blob([csv], { type: 'text/csv' });
     
-    // ✅ FIXED: Replace optional chaining
     const groupName = (this.selectedExamGroup && this.selectedExamGroup.name) || 'export';
     saveAs(blob, `exam_schedule_${groupName}.csv`);
   }
@@ -1446,7 +1479,7 @@ export class ExamSchedulerComponent implements OnInit {
       const parsed = JSON.parse(saved);
       this.activeTerm = parsed.activeTerm || '';
       this.exams = parsed.exams || [];
-      this.rooms = parsed.rooms || [];
+      this.rooms = parsed.rooms || '';
       this.generatedSchedule = parsed.generatedSchedule || [];
       this.examDates = parsed.examDates || ['', '', ''];
       this.currentStep = parsed.currentStep || 'import';
@@ -1475,16 +1508,27 @@ export class ExamSchedulerComponent implements OnInit {
   }
 
   getTermYearLabel(termYearCode: string): string {
-    if (!termYearCode) return '';
-    
-    const termMap: any = { '1': '1st Term', '2': '2nd Term', '3': 'Summer' };
-    const termCode = termYearCode.slice(-1);
-    const yearPart = termYearCode.slice(0, -1);
-    const year1 = yearPart.slice(0, 4);
-    const year2 = '20' + yearPart.slice(-2);
-    
-    return `${termMap[termCode] || 'Unknown'} ${year1}-${year2}`;
+  if (!termYearCode) return 'Unknown';
+  
+  // ✅ If already in text format, return as-is
+  if (termYearCode.includes('Semester') || termYearCode.includes('Summer') || termYearCode.includes('Term')) {
+    return termYearCode;
   }
+  
+  // ✅ FIXED: Convert numeric code to "Semester SY" format
+  // Format: "2023241" → "1st Semester SY 2023-2024"
+  if (/^\d{7}$/.test(termYearCode)) {
+    const termMap: any = { '1': '1st Semester', '2': '2nd Semester', '3': 'Summer' };
+    const termCode = termYearCode.slice(-1);
+    const year1 = termYearCode.slice(0, 4);
+    const year2Short = termYearCode.slice(4, 6);
+    const year2 = '20' + year2Short;
+    
+    return `${termMap[termCode] || 'Unknown'} SY ${year1}-${year2}`;
+  }
+  
+  return 'Unknown';
+}
 
   hasEmptyDates(): boolean {
     return this.examDates.some(d => !d);
@@ -1575,33 +1619,3 @@ export class ExamSchedulerComponent implements OnInit {
     }
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

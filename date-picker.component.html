@@ -25,20 +25,23 @@
     <h4 style="color: #666; margin-bottom: 10px;">Exam Dates</h4>
     
     <div *ngFor="let day of examDays; let i = index" style="margin-bottom: 15px;">
-      <div style="display: flex; align-items: center; gap: 10px;">
-        <mat-form-field appearance="outline" style="flex: 1;">
-          <mat-label>Exam Date {{ i + 1 }}</mat-label>
-          <input 
-            matInput 
-            [matDatepicker]="picker" 
-            [(ngModel)]="day.date"
-            [matDatepickerFilter]="dateFilter">
-          <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
-          <mat-datepicker #picker></mat-datepicker>
-        </mat-form-field>
+  <div style="display: flex; align-items: center; gap: 10px;">
+    <!-- ✅ UPDATED MAT-FORM-FIELD WITH (ngModelChange) ⬇️ -->
+    <mat-form-field appearance="outline" style="flex: 1;">
+      <mat-label>Exam Date {{ i + 1 }}</mat-label>
+      <input 
+        matInput 
+        [matDatepicker]="picker" 
+        [(ngModel)]="day.date"
+        (ngModelChange)="onDateChange(day)"
+        [matDatepickerFilter]="dateFilter">
+      <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+      <mat-datepicker #picker></mat-datepicker>
+    </mat-form-field>
+    <!-- ✅ UPDATED MAT-FORM-FIELD WITH (ngModelChange) ⬆️ -->
 
-        <mat-checkbox [(ngModel)]="day.am" style="min-width: 60px;">AM</mat-checkbox>
-        <mat-checkbox [(ngModel)]="day.pm" style="min-width: 60px;">PM</mat-checkbox>
+    <mat-checkbox [(ngModel)]="day.am" style="min-width: 60px;">AM</mat-checkbox>
+    <mat-checkbox [(ngModel)]="day.pm" style="min-width: 60px;">PM</mat-checkbox>
 
         <button 
           *ngIf="examDays.length > 1" 

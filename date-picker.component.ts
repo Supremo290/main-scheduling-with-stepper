@@ -28,7 +28,7 @@ export class DatePickerComponent implements OnInit {
   selectedTermYear: string = '';
   termYearOptions: { label: string, value: string }[] = [];
 
-  showEditor = true; // ✅ Always show editor in dialog mode
+  showEditor = true;
   editingGroup: ExamGroup | null = null;
 
   maxDays = 5;
@@ -42,33 +42,41 @@ export class DatePickerComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    const currentYear = new Date().getFullYear();
-    this.minDate = new Date(currentYear, 0, 1);
-    this.maxDate = new Date(2035, 11, 31);
+  const currentYear = new Date().getFullYear();
+  this.minDate = new Date(currentYear, 0, 1);
+  this.maxDate = new Date(2035, 11, 31);
 
-    this.generateTermYearOptions();
-    this.loadStoredGroups();
-    
-    // ✅ Check if opened for editing
-    if (this.data && this.data.mode === 'edit' && this.data.group) {
-      this.editGroup(this.data.group);
-    } else {
-      this.resetExamDays();
-    }
+  this.generateTermYearOptions();
+  this.loadStoredGroups();
+  
+  if (!this.data || this.data.mode !== 'edit') {
+    this.sharedData.clearSelectedExamGroup();
+    this.sharedData.clearExamDates();
+    this.sharedData.clearActiveTerm();
+    this.selectedGroupName = null;
   }
+  
+  if (this.data && this.data.mode === 'edit' && this.data.group) {
+    this.editGroup(this.data.group);
+  } else {
+    this.resetExamDays();
+  }
+}
 
   generateTermYearOptions() {
     const currentYear = new Date().getFullYear();
+    // ✅ FIXED: Changed to "Semester" but VALUE will be numeric code
     const terms = [
-      { key: 1, value: '1st Term' },
-      { key: 2, value: '2nd Term' },
+      { key: 1, value: '1st Semester' },
+      { key: 2, value: '2nd Semester' },
       { key: 3, value: 'Summer' },
     ];
 
     for (let y = currentYear - 2; y <= currentYear + 1; y++) {
       const nextYear = y + 1;
       for (const t of terms) {
-        const label = `${t.value} ${y}-${nextYear}`;
+        // ✅ FIXED: Label shows "Semester SY" but value is numeric code for API
+        const label = `${t.value} SY ${y}-${nextYear}`;
         const value = `${y}${nextYear.toString().slice(-2)}${t.key}`;
         this.termYearOptions.push({ label, value });
       }
@@ -119,72 +127,74 @@ export class DatePickerComponent implements OnInit {
   }
 
   saveGroup() {
-    const validDays = this.examDays.filter(d => d.date instanceof Date);
+  const validDays = this.examDays.filter(d => d.date instanceof Date);
 
-    if (!validDays.length) {
-      alert('Please select at least one valid exam date.');
-      return;
-    }
-
-    if (!this.newGroupName.trim()) {
-      alert('Please enter a name for this exam schedule.');
-      return;
-    }
-
-    if (!this.selectedTermYear) {
-      alert('Please select a Term & School Year for this exam schedule.');
-      return;
-    }
-
-    const updatedGroup: ExamGroup = {
-      name: this.newGroupName.trim(),
-      days: validDays,
-      termYear: this.selectedTermYear
-    };
-
-    if (this.editingGroup) {
-      const index = this.savedExamGroups.indexOf(this.editingGroup);
-      if (index !== -1) {
-        this.savedExamGroups[index] = updatedGroup;
-        
-        const currentlySelected = this.sharedData.getSelectedExamGroup();
-        if (currentlySelected && currentlySelected.name === this.editingGroup.name) {
-          console.log(`✏️ Updating currently selected group "${updatedGroup.name}"`);
-          
-          this.sharedData.setExamDates(updatedGroup.days);
-          this.sharedData.setSelectedExamGroup(updatedGroup);
-          this.sharedData.setActiveTerm(updatedGroup.termYear!);
-          
-          console.log("✅ Updated exam dates, triggering migration in student-mapping");
-        }
-      }
-      alert('✏️ Exam group updated! Your schedule data has been preserved.');
-    } else {
-      const existingIndex = this.savedExamGroups.findIndex(
-        g => g.name === updatedGroup.name
-      );
-
-      if (existingIndex !== -1) {
-        if (confirm(`"${updatedGroup.name}" already exists. Replace it?`)) {
-          this.savedExamGroups[existingIndex] = updatedGroup;
-        } else {
-          return;
-        }
-      } else {
-        this.savedExamGroups.push(updatedGroup);
-      }
-
-      alert('✅ Exam group saved!');
-    }
-
-    this.saveAllGroups();
-    this.loadStoredGroups();
-
-    // ✅ Close dialog after saving
-    if (this.dialogRef) {
-      this.dialogRef.close(updatedGroup);
-    }
+  if (!validDays.length) {
+    alert('Please select at least one valid exam date.');
+    return;
   }
+
+  if (!this.newGroupName.trim()) {
+    alert('Please enter a name for this exam schedule.');
+    return;
+  }
+
+  if (!this.selectedTermYear) {
+    alert('Please select a Term & School Year for this exam schedule.');
+    return;
+  }
+
+  // ✅ IMPORTANT: Store numeric code (e.g., "2023241") for API
+  const updatedGroup: ExamGroup = {
+    name: this.newGroupName.trim(),
+    days: validDays,
+    termYear: this.selectedTermYear
+  };
+
+  console.log('💾 Saving group with termYear:', this.selectedTermYear);
+
+  if (this.editingGroup) {
+    const index = this.savedExamGroups.indexOf(this.editingGroup);
+    if (index !== -1) {
+      this.savedExamGroups[index] = updatedGroup;
+      
+      const currentlySelected = this.sharedData.getSelectedExamGroup();
+      if (currentlySelected && currentlySelected.name === this.editingGroup.name) {
+        console.log(`✏️ Updating currently selected group "${updatedGroup.name}"`);
+        
+        this.sharedData.setExamDates(updatedGroup.days);
+        this.sharedData.setSelectedExamGroup(updatedGroup);
+        this.sharedData.setActiveTerm(updatedGroup.termYear!);
+        
+        console.log("✅ Updated exam dates, triggering migration in student-mapping");
+      }
+    }
+    alert('✏️ Exam group updated! Your schedule data has been preserved.');
+  } else {
+    const existingIndex = this.savedExamGroups.findIndex(
+      g => g.name === updatedGroup.name
+    );
+
+    if (existingIndex !== -1) {
+      if (confirm(`"${updatedGroup.name}" already exists. Replace it?`)) {
+        this.savedExamGroups[existingIndex] = updatedGroup;
+      } else {
+        return;
+      }
+    } else {
+      this.savedExamGroups.push(updatedGroup);
+    }
+
+    alert('✅ Exam group saved!');
+  }
+
+  this.saveAllGroups();
+  this.loadStoredGroups();
+
+  if (this.dialogRef) {
+    this.dialogRef.close(updatedGroup);
+  }
+}
 
   deleteGroup(groupName: string) {
     if (confirm(`Delete exam group "${groupName}"?`)) {
@@ -253,19 +263,30 @@ export class DatePickerComponent implements OnInit {
   };
 
   getTermAndYear(group: ExamGroup): string {
-    if (group.termYear) {
-      const termMap: any = { '1': '1st Term', '2': '2nd Term', '3': 'Summer' };
-      const termCode = group.termYear.slice(-1);
-      const yearPart = group.termYear.slice(0, -1);
-      const year1 = yearPart.slice(0, 4);
-      const year2 = '20' + yearPart.slice(-2);
-      
-      return `${termMap[termCode] || 'Unknown'} ${year1}-${year2}`;
-    }
-    
+  if (!group.termYear) {
     const year = new Date().getFullYear();
-    return `1st Sem ${year}-${year + 1}`;
+    return `1st Semester SY ${year}-${year + 1}`;
   }
+  
+  // ✅ If already in text format, return as-is
+  if (group.termYear.includes('Semester') || group.termYear.includes('Summer') || group.termYear.includes('Term')) {
+    return group.termYear;
+  }
+  
+  // ✅ FIXED: Convert numeric code to "Semester SY" format
+  // Format: "2023241" → "1st Semester SY 2023-2024"
+  if (/^\d{7}$/.test(group.termYear)) {
+    const termMap: any = { '1': '1st Semester', '2': '2nd Semester', '3': 'Summer' };
+    const termCode = group.termYear.slice(-1);
+    const year1 = group.termYear.slice(0, 4);
+    const year2Short = group.termYear.slice(4, 6);
+    const year2 = '20' + year2Short;
+    
+    return `${termMap[termCode] || 'Unknown'} SY ${year1}-${year2}`;
+  }
+  
+  return 'Unknown';
+}
 
   getDateRange(days: ExamDay[]): string {
     if (!days || days.length === 0) return '-';
@@ -291,36 +312,17 @@ export class DatePickerComponent implements OnInit {
     const hasGroupName = this.newGroupName && this.newGroupName.trim().length > 0;
     return !this.selectedTermYear || !hasGroupName || !hasValidDates;
   }
+
+  onDateChange(day: ExamDay) {
+  if (day.date) {
+    day.am = true;
+    day.pm = true;
+  } else {
+    day.am = false;
+    day.pm = false;
+  }
 }
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+}

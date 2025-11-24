@@ -6,8 +6,7 @@
   </div>
 
   <div class="header">
-    <h1> Enhanced Exam Scheduler</h1>
-    <p class="subtitle">Import, generate, and manage exam schedules with advanced algorithms</p>
+    <h2>Enhanced Exam Scheduler</h2>
   </div>
 
   <!-- STEP 1: IMPORT -->
@@ -43,7 +42,7 @@
       </div>
 
       <!-- Full-Featured Exam Group Manager -->
-      <div  style="background: white; padding: 20px; border-radius: 5px; margin-top: 15px;">
+      <div *ngIf="showExamGroupManager" style="background: white; padding: 20px; border-radius: 5px; margin-top: 15px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
           <h4 style="color: #1565C0; margin: 0;">Saved Exam Groups</h4>
           <button mat-raised-button color="primary" (click)="openDatePickerDialog()">
@@ -52,13 +51,9 @@
           </button>
         </div>
         
-        <div *ngIf="savedExamGroups.length === 0" style="text-align: center; padding: 40px; color: #999;">
-          <mat-icon style="font-size: 64px; height: 64px; width: 64px; color: #ccc;">event_busy</mat-icon>
-          <p style="margin-top: 15px; font-size: 16px;">No saved exam groups yet.</p>
-          <p style="color: #666;">Click "Add Dates" to create your first exam schedule.</p>
-        </div>
 
-        <div *ngIf="savedExamGroups.length > 0" style="max-height: 400px; overflow-y: auto;">
+        <!-- ✅ Always show table with headers -->
+        <div style="max-height: 400px; overflow-y: auto;">
           <table class="apptable" style="width: 100%;">
             <thead>
               <tr>
@@ -71,6 +66,14 @@
               </tr>
             </thead>
             <tbody>
+              <!-- Empty state message inside table -->
+              <tr *ngIf="savedExamGroups.length === 0">
+                <td colspan="6" style="text-align: center; padding: 30px; color: #999; font-style: italic;">
+                  No exam groups saved yet. Click "Add Dates" to create one.
+                </td>
+              </tr>
+
+              <!-- Data rows -->
               <tr *ngFor="let group of savedExamGroups" 
                   [style.background-color]="selectedExamGroup && selectedExamGroup.name === group.name ? '#e8f5e9' : 'transparent'">
                 
@@ -123,28 +126,10 @@
       </div>
     </div>
 
-    <!-- Term & School Year Selection (Auto-filled from selected group) -->
-    <div class="section api-section">
+    <!-- ✅ Load Data from API (Only show when group is selected) -->
+    <div *ngIf="selectedExamGroup" class="section api-section">
       <h3>📡 Load Data from API</h3>
       
-      <div class="form-row">
-        <div class="form-group">
-          <label>Term & School Year {{ selectedExamGroup ? '(from selected group)' : '' }}</label>
-          <mat-form-field appearance="outline" class="w-full">
-            <mat-label>Select Term & School Year</mat-label>
-            <mat-select [(ngModel)]="activeTerm" name="activeTerm" [disabled]="!!selectedExamGroup">
-              <mat-option *ngFor="let item of combinedOptions" [value]="item.value">
-                {{ item.label }}
-              </mat-option>
-            </mat-select>
-          </mat-form-field>
-          <small *ngIf="selectedExamGroup" style="color: #666; font-style: italic;">
-            Term is set from the selected exam group
-          </small>
-        </div>
-      </div>
-
-      <!-- Single Load Button -->
       <div class="button-row">
         <button 
           mat-raised-button
@@ -165,11 +150,11 @@
       </div>
     </div>
 
-    <!-- Exam Dates (Auto-filled from selected group) -->
-    <div class="section">
-      <h3>📅 Exam Dates {{ selectedExamGroup ? '(from selected group)' : '' }}</h3>
+    <!-- ✅ Exam Dates (Only show when group is selected) -->
+    <div *ngIf="selectedExamGroup" class="section">
+      <h3>📅 Exam Dates (from selected group)</h3>
       
-      <div *ngIf="selectedExamGroup" style="background: #e8f5e9; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+      <div style="background: #e8f5e9; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
         <p style="color: #2e7d32; margin: 0;">
           <mat-icon style="vertical-align: middle; color: #2e7d32;">info</mat-icon>
           Exam dates are automatically set from your selected exam group
@@ -183,22 +168,22 @@
             type="date" 
             class="form-control" 
             [(ngModel)]="examDates[i]"
-            [disabled]="!!selectedExamGroup"
+            disabled
           />
         </div>
       </div>
 
-      <small *ngIf="selectedExamGroup" style="color: #666; font-style: italic; margin-top: 10px; display: block;">
-        To change exam dates, edit the exam group in the Date Picker component
+      <small style="color: #666; font-style: italic; margin-top: 10px; display: block;">
+        To change exam dates, edit the exam group by clicking the Edit button above
       </small>
     </div>
 
-    <!-- ✅ ENHANCED: Generate button with algorithm choice -->
-    <div style="display: flex; gap: 15px; align-items: center;">
+    <!-- ✅ Generate button (Only show when group is selected AND exams are loaded) -->
+    <div *ngIf="selectedExamGroup && exams.length > 0" style="display: flex; gap: 15px; align-items: center; margin-top: 20px;">
       <button 
         class="btn btn-primary btn-lg" 
         (click)="generateExamSchedule()" 
-        [disabled]="exams.length === 0 || hasEmptyDates()">
+        [disabled]="hasEmptyDates()">
         <mat-icon>auto_awesome</mat-icon>
         Generate Schedule
       </button>
@@ -545,12 +530,5 @@
   </div>
 
 </div>
-
-
-
-
-
-
-
 
 
