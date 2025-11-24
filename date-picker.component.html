@@ -1,86 +1,11 @@
-<!-- Saved Exam Groups Section (ALWAYS VISIBLE) -->
-<div style="margin-top: 30px;">
+<div class="date-picker-dialog" style="padding: 20px;">
+  
+  <h2 style="margin-top: 0; color: #1565C0;">
+    {{ editingGroup ? 'Edit Exam Group' : 'Add New Exam Group' }}
+  </h2>
 
-  <h3 style="color:#1565C0;">Saved Exam Groups</h3>
-
-  <!-- SUMMARY TABLE - ALWAYS SHOW HEADER -->
-  <div style="max-height: 300px; overflow-y: auto; margin-top: 15px;">
-
-    <table class="apptable" style="width: 100%;">
-
-      <thead>
-        <tr>
-          <th style="width: 180px;">Term & Year</th>
-          <th style="width: 150px;">Exam Period</th>
-          <th>Exam Dates</th>
-          <th style="width: 80px;">Use</th>
-          <th style="width: 80px;">Edit</th>
-          <th style="width: 80px;">Delete</th>
-        </tr>
-      </thead>
-
-      <tbody>
-        <!-- Show message when empty -->
-        <tr *ngIf="savedExamGroups.length === 0">
-          <td colspan="6" style="padding: 15px; font-style: italic; text-align: center; color: #666;">
-            No saved exam groups yet.
-          </td>
-        </tr>
-
-        <!-- Data rows -->
-        <tr *ngFor="let group of savedExamGroups">
-
-          <!-- TERM & YEAR -->
-          <td>{{ getTermAndYear(group) }}</td>
-
-          <!-- EXAM PERIOD (Prelim / Midterm / Finals) -->
-          <td>{{ group.name }}</td>
-
-          <!-- DATE RANGE (e.g. Nov 1–3) -->
-          <td>{{ getDateRange(group.days) }}</td>
-
-          <!-- SELECT GROUP BUTTON -->
-          <td style="text-align: center;">
-            <button mat-icon-button color="primary" (click)="selectGroup(group)" matTooltip="Use this group">
-              <mat-icon>check_circle</mat-icon>
-            </button>
-          </td>
-
-          <!-- EDIT BUTTON -->
-          <td style="text-align: center;">
-            <button mat-icon-button color="accent" (click)="editGroup(group)" matTooltip="Edit this group">
-              <mat-icon>edit</mat-icon>
-            </button>
-          </td>
-
-          <!-- DELETE BUTTON -->
-          <td style="text-align: center;">
-            <button mat-icon-button color="warn" (click)="deleteGroup(group.name)" matTooltip="Delete this group">
-              <mat-icon>delete</mat-icon>
-            </button>
-          </td>
-
-        </tr>
-      </tbody>
-
-    </table>
-
-  </div>
-
-</div>
-
-<!-- Add Dates Button -->
-<div *ngIf="!dialogRef" style="text-align: right; margin-top: 15px;">
-  <button mat-raised-button color="primary" (click)="addDates()">Add Dates</button>
-</div>
-
-<!-- SELECT EXAM DATES SECTION (HIDDEN UNTIL ADD DATES CLICKED) -->
-<div *ngIf="showEditor">
-
-  <h2>Select Exam Dates</h2>
-
-  <!-- ✅ Term & School Year Selector (MOVED TO TOP) -->
-  <mat-form-field appearance="outline" style="width: 300px; margin-bottom: 15px;">
+  <!-- Term & School Year Selector -->
+  <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 15px;">
     <mat-label>Term & School Year</mat-label>
     <mat-select [(ngModel)]="selectedTermYear">
       <mat-option *ngFor="let opt of termYearOptions" [value]="opt.value">
@@ -89,50 +14,118 @@
     </mat-select>
   </mat-form-field>
 
-  <br>
-
   <!-- Group Name Input -->
-  <mat-form-field appearance="outline" style="width: 300px; margin-bottom: 15px;">
+  <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 15px;">
     <mat-label>Exam Group Name (e.g. Prelim, Midterm, Finals)</mat-label>
     <input matInput [(ngModel)]="newGroupName" placeholder="Enter exam group name">
   </mat-form-field>
 
-  <br>
+  <!-- Date Picker Inputs -->
+  <div style="margin-bottom: 20px;">
+    <h4 style="color: #666; margin-bottom: 10px;">Exam Dates</h4>
+    
+    <div *ngFor="let day of examDays; let i = index" style="margin-bottom: 15px;">
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <mat-form-field appearance="outline" style="flex: 1;">
+          <mat-label>Exam Date {{ i + 1 }}</mat-label>
+          <input 
+            matInput 
+            [matDatepicker]="picker" 
+            [(ngModel)]="day.date"
+            [matDatepickerFilter]="dateFilter">
+          <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
+          <mat-datepicker #picker></mat-datepicker>
+        </mat-form-field>
 
-  <!-- Date picker inputs -->
-  <div *ngFor="let day of examDays; let i = index" class="exam-day">
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-      <mat-form-field appearance="outline" style="width: 200px;">
-        <mat-label>Exam Date {{ i + 1 }}</mat-label>
-        <input 
-          matInput 
-          [matDatepicker]="picker" 
-          [(ngModel)]="day.date"
-          [matDatepickerFilter]="dateFilter">
-        <mat-datepicker-toggle matSuffix [for]="picker"></mat-datepicker-toggle>
-        <mat-datepicker #picker></mat-datepicker>
-      </mat-form-field>
+        <mat-checkbox [(ngModel)]="day.am" style="min-width: 60px;">AM</mat-checkbox>
+        <mat-checkbox [(ngModel)]="day.pm" style="min-width: 60px;">PM</mat-checkbox>
 
-      <mat-checkbox [(ngModel)]="day.am">AM</mat-checkbox>
-      <mat-checkbox [(ngModel)]="day.pm">PM</mat-checkbox>
+        <button 
+          *ngIf="examDays.length > 1" 
+          mat-icon-button 
+          color="warn" 
+          (click)="removeDay(i)"
+          matTooltip="Remove this date">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </div>
 
-      <button *ngIf="examDays.length > 1" mat-icon-button color="warn" (click)="removeDay(i)">
-        <mat-icon>delete</mat-icon>
+      <!-- Display weekday -->
+      <div *ngIf="day.date" style="margin-left: 10px; font-size: 12px; color: #666;">
+        {{ day.date | date: 'EEEE, MMMM d, yyyy' }}
+      </div>
+    </div>
+
+    <!-- Add Day Button -->
+    <div style="text-align: center; margin-top: 15px;">
+      <button 
+        mat-stroked-button 
+        color="primary" 
+        (click)="addDay()" 
+        [disabled]="examDays.length >= maxDays">
+        <mat-icon>add</mat-icon>
+        Add Another Day
+        <span *ngIf="examDays.length >= maxDays" style="font-size: 11px; margin-left: 5px;">
+          (Max {{ maxDays }} days)
+        </span>
       </button>
     </div>
   </div>
 
-  <!-- Add Day Button -->
-  <div style="text-align: center; margin-top: 10px;">
-    <button mat-stroked-button color="primary" (click)="addDay()" [disabled]="examDays.length >= maxDays">
-      <mat-icon>add</mat-icon> Add Day
+  <!-- Action Buttons -->
+  <div style="display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #ddd;">
+    <button mat-button (click)="closeDialog()">
+      Cancel
+    </button>
+    <button 
+      mat-raised-button 
+      color="primary" 
+      (click)="saveGroup()" 
+      [disabled]="isFormInvalid()">
+      <mat-icon>save</mat-icon>
+      {{ editingGroup ? 'Update Group' : 'Save Group' }}
     </button>
   </div>
 
-  <!-- Save Button -->
-  <div *ngIf="!dialogRef" style="text-align: right; margin-top: 15px;">
-    <button mat-raised-button color="primary" (click)="saveGroup()" [disabled]="!selectedTermYear">
-      Save Group
-    </button>
+  <!-- Validation Messages -->
+  <div *ngIf="isFormInvalid()" 
+       style="margin-top: 10px; padding: 10px; background: #fff3cd; border-radius: 4px; font-size: 13px; color: #856404;">
+    <mat-icon style="vertical-align: middle; font-size: 18px;">info</mat-icon>
+    <span style="margin-left: 5px;">
+      Please fill in all required fields: Term & Year, Group Name, and at least one Exam Date
+    </span>
   </div>
+
 </div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

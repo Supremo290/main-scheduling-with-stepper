@@ -1,0 +1,556 @@
+<div class="scheduler-container">
+  <!-- Toast Notification -->
+  <div *ngIf="toast" [class]="'toast toast-' + (toast.variant || 'success')">
+    <div class="toast-title">{{ toast.title }}</div>
+    <div class="toast-description">{{ toast.description }}</div>
+  </div>
+
+  <div class="header">
+    <h1> Enhanced Exam Scheduler</h1>
+    <p class="subtitle">Import, generate, and manage exam schedules with advanced algorithms</p>
+  </div>
+
+  <!-- STEP 1: IMPORT -->
+  <div *ngIf="currentStep === 'import'" class="card">
+    <h2>Step 1: Load Exam Data</h2>
+
+    <!-- ✅ ENHANCED: Exam Group Management Section with Full Features -->
+    <div class="section exam-group-section" style="background: #e3f2fd; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3 style="color: #0D47A1; margin: 0;">📅 Exam Group Management</h3>
+        <button 
+          mat-stroked-button 
+          color="primary" 
+          (click)="toggleExamGroupManager()"
+          style="font-size: 13px;">
+          <mat-icon>{{ showExamGroupManager ? 'expand_less' : 'expand_more' }}</mat-icon>
+          {{ showExamGroupManager ? 'Hide' : 'Manage' }} Groups
+        </button>
+      </div>
+
+      <!-- Selected Group Display -->
+      <div *ngIf="selectedExamGroup && !showExamGroupManager" 
+           style="background: white; padding: 15px; border-radius: 5px; border-left: 4px solid #1565C0;">
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 8px;">
+          <mat-icon style="color: #1565C0;">check_circle</mat-icon>
+          <strong style="color: #0D47A1;">Selected Group:</strong>
+          <span style="font-size: 16px;">{{ selectedExamGroup.name }}</span>
+        </div>
+        <div style="margin-left: 34px; color: #666; font-size: 14px;">
+          <span>{{ getTermYearLabel(selectedExamGroup.termYear!) }}</span>
+          <span style="margin-left: 15px;">{{ selectedExamGroup.days.length }} exam days</span>
+        </div>
+      </div>
+
+      <!-- Full-Featured Exam Group Manager -->
+      <div  style="background: white; padding: 20px; border-radius: 5px; margin-top: 15px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+          <h4 style="color: #1565C0; margin: 0;">Saved Exam Groups</h4>
+          <button mat-raised-button color="primary" (click)="openDatePickerDialog()">
+            <mat-icon>add</mat-icon>
+            Add Dates
+          </button>
+        </div>
+        
+        <div *ngIf="savedExamGroups.length === 0" style="text-align: center; padding: 40px; color: #999;">
+          <mat-icon style="font-size: 64px; height: 64px; width: 64px; color: #ccc;">event_busy</mat-icon>
+          <p style="margin-top: 15px; font-size: 16px;">No saved exam groups yet.</p>
+          <p style="color: #666;">Click "Add Dates" to create your first exam schedule.</p>
+        </div>
+
+        <div *ngIf="savedExamGroups.length > 0" style="max-height: 400px; overflow-y: auto;">
+          <table class="apptable" style="width: 100%;">
+            <thead>
+              <tr>
+                <th style="width: 180px;">Term & Year</th>
+                <th style="width: 150px;">Exam Period</th>
+                <th>Exam Dates</th>
+                <th style="width: 80px; text-align: center;">Use</th>
+                <th style="width: 80px; text-align: center;">Edit</th>
+                <th style="width: 80px; text-align: center;">Delete</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr *ngFor="let group of savedExamGroups" 
+                  [style.background-color]="selectedExamGroup && selectedExamGroup.name === group.name ? '#e8f5e9' : 'transparent'">
+                
+                <!-- Term & Year -->
+                <td>{{ getTermYearLabel(group.termYear!) }}</td>
+                
+                <!-- Exam Period (Group Name) -->
+                <td><strong>{{ group.name }}</strong></td>
+                
+                <!-- Date Range -->
+                <td style="font-size: 13px;">{{ getDateRange(group.days) }}</td>
+                
+                <!-- Use Button -->
+                <td style="text-align: center;">
+                  <button 
+                    mat-icon-button 
+                    color="primary" 
+                    (click)="selectExamGroup(group)" 
+                    matTooltip="Use this group"
+                    [disabled]="selectedExamGroup && selectedExamGroup.name === group.name">
+                    <mat-icon>{{ selectedExamGroup && selectedExamGroup.name === group.name ? 'check_circle' : 'radio_button_unchecked' }}</mat-icon>
+                  </button>
+                </td>
+                
+                <!-- Edit Button -->
+                <td style="text-align: center;">
+                  <button 
+                    mat-icon-button 
+                    color="accent" 
+                    (click)="editGroup(group)" 
+                    matTooltip="Edit this group">
+                    <mat-icon>edit</mat-icon>
+                  </button>
+                </td>
+                
+                <!-- Delete Button -->
+                <td style="text-align: center;">
+                  <button 
+                    mat-icon-button 
+                    color="warn" 
+                    (click)="deleteGroup(group.name)" 
+                    matTooltip="Delete this group">
+                    <mat-icon>delete</mat-icon>
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Term & School Year Selection (Auto-filled from selected group) -->
+    <div class="section api-section">
+      <h3>📡 Load Data from API</h3>
+      
+      <div class="form-row">
+        <div class="form-group">
+          <label>Term & School Year {{ selectedExamGroup ? '(from selected group)' : '' }}</label>
+          <mat-form-field appearance="outline" class="w-full">
+            <mat-label>Select Term & School Year</mat-label>
+            <mat-select [(ngModel)]="activeTerm" name="activeTerm" [disabled]="!!selectedExamGroup">
+              <mat-option *ngFor="let item of combinedOptions" [value]="item.value">
+                {{ item.label }}
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+          <small *ngIf="selectedExamGroup" style="color: #666; font-style: italic;">
+            Term is set from the selected exam group
+          </small>
+        </div>
+      </div>
+
+      <!-- Single Load Button -->
+      <div class="button-row">
+        <button 
+          mat-raised-button
+          color="primary"
+          class="btn btn-primary" 
+          (click)="loadExamData()" 
+          [disabled]="isLoadingApi || !activeTerm">
+          <mat-icon>cloud_download</mat-icon>
+          {{ isLoadingApi ? 'Loading...' : 'Load Exam Data from API' }}
+        </button>
+      </div>
+
+      <!-- Status Messages -->
+      <div class="status-container" *ngIf="exams.length > 0 || rooms.length > 0">
+        <p *ngIf="exams.length > 0" class="success-text">✓ {{ exams.length }} exams loaded</p>
+        <p *ngIf="rooms.length > 0" class="success-text">✓ {{ rooms.length }} rooms loaded</p>
+        <p *ngIf="roomCapacities.size > 0" class="success-text">✓ {{ roomCapacities.size }} room capacities extracted</p>
+      </div>
+    </div>
+
+    <!-- Exam Dates (Auto-filled from selected group) -->
+    <div class="section">
+      <h3>📅 Exam Dates {{ selectedExamGroup ? '(from selected group)' : '' }}</h3>
+      
+      <div *ngIf="selectedExamGroup" style="background: #e8f5e9; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+        <p style="color: #2e7d32; margin: 0;">
+          <mat-icon style="vertical-align: middle; color: #2e7d32;">info</mat-icon>
+          Exam dates are automatically set from your selected exam group
+        </p>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group" *ngFor="let day of days; let i = index">
+          <label>{{ day }}</label>
+          <input 
+            type="date" 
+            class="form-control" 
+            [(ngModel)]="examDates[i]"
+            [disabled]="!!selectedExamGroup"
+          />
+        </div>
+      </div>
+
+      <small *ngIf="selectedExamGroup" style="color: #666; font-style: italic; margin-top: 10px; display: block;">
+        To change exam dates, edit the exam group in the Date Picker component
+      </small>
+    </div>
+
+    <!-- ✅ ENHANCED: Generate button with algorithm choice -->
+    <div style="display: flex; gap: 15px; align-items: center;">
+      <button 
+        class="btn btn-primary btn-lg" 
+        (click)="generateExamSchedule()" 
+        [disabled]="exams.length === 0 || hasEmptyDates()">
+        <mat-icon>auto_awesome</mat-icon>
+        Generate Schedule
+      </button>
+
+      <div style="background: #fff3cd; padding: 10px 15px; border-radius: 5px; border-left: 4px solid #ffc107; flex: 1;">
+        <small style="color: #856404;">
+          <strong>ℹ️ Note:</strong> You'll be asked to choose between Basic (fast) or Enhanced (smart with all rules) algorithm
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 2: GENERATED SCHEDULE -->
+  <div *ngIf="currentStep === 'generate'" class="card">
+    <div class="card-header">
+      <h2>Step 2: Generated Schedule</h2>
+      <div class="button-group">
+        <button class="btnback" (click)="goToStep('import')">
+          ⬅ Back
+        </button>
+        <button class="btn btn-outline" (click)="downloadScheduleCSV()">
+          💾 Download CSV
+        </button>
+        <button class="btn btn-success" (click)="saveToLocalStorage()">
+          <mat-icon>save</mat-icon>
+          Save Schedule
+        </button>
+      </div>
+    </div>
+
+    <p class="subtitle">
+      {{ generatedSchedule.length }} exams scheduled
+      <span *ngIf="selectedExamGroup" style="margin-left: 15px; color: #666;">
+        ({{ selectedExamGroup.name }})
+      </span>
+    </p>
+
+    <div class="table-responsive">
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th>Code</th>
+            <th>Subject ID</th>
+            <th>Title</th>
+            <th>Course</th>
+            <th>Year Level</th>
+            <th>Instructor</th>
+            <th>Dept</th>
+            <th>Day</th>
+            <th>Time</th>
+            <th>Room</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let exam of generatedSchedule; let idx = index">
+            <td>
+              <input 
+                *ngIf="editingRow === idx" 
+                class="form-control-sm" 
+                [(ngModel)]="editedExam.CODE"
+              />
+              <span *ngIf="editingRow !== idx">{{ exam.CODE }}</span>
+            </td>
+            <td>{{ exam.SUBJECT_ID }}</td>
+            <td class="truncate">{{ exam.DESCRIPTIVE_TITLE }}</td>
+            <td>{{ exam.COURSE }}</td>
+            <td>
+              <span class="year-level-badge">{{ exam.YEAR_LEVEL }}</span>
+            </td>
+            <td>{{ exam.INSTRUCTOR }}</td>
+            <td>{{ exam.DEPT }}</td>
+            <td>
+              <select 
+                *ngIf="editingRow === idx" 
+                class="form-control-sm" 
+                [(ngModel)]="editedExam.DAY">
+                <option *ngFor="let d of days" [value]="d">{{ d }}</option>
+              </select>
+              <span *ngIf="editingRow !== idx">{{ exam.DAY }}</span>
+            </td>
+            <td>
+              <select 
+                *ngIf="editingRow === idx" 
+                class="form-control-sm" 
+                [(ngModel)]="editedExam.SLOT">
+                <option *ngFor="let s of timeSlots" [value]="s">{{ s }}</option>
+              </select>
+              <span *ngIf="editingRow !== idx">{{ exam.SLOT }}</span>
+            </td>
+            <td>
+              <select 
+                *ngIf="editingRow === idx" 
+                class="form-control-sm" 
+                [(ngModel)]="editedExam.ROOM">
+                <option *ngFor="let r of (rooms.length > 0 ? rooms : ['A', 'C', 'K', 'L', 'M', 'N'])" [value]="r">{{ r }}</option>
+              </select>
+              <span *ngIf="editingRow !== idx">{{ exam.ROOM }}</span>
+            </td>
+            <td>
+              <div *ngIf="editingRow === idx" class="action-buttons">
+                <button class="btn-icon btn-success" (click)="saveEdit()">✓</button>
+                <button class="btn-icon btn-danger" (click)="cancelEdit()">✗</button>
+              </div>
+              <button *ngIf="editingRow !== idx" class="btn-icon" (click)="startEdit(idx)">✏️</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-3">
+      <button class="btn btn-primary" (click)="viewCourseSummary()">
+        View Course Summary
+      </button>
+      <button class="btn btn-outline" (click)="viewCourseGrid()">
+        View Course Grid
+      </button>
+    </div>
+  </div>
+
+  <!-- STEP 3: COURSE SUMMARY (ORGANIZED BY YEAR LEVEL) -->
+  <div *ngIf="currentStep === 'summary'" class="card">
+    <div class="card-header">
+      <h2>Step 3: Course Summary (Organized by Year Level)</h2>
+      <button class="btnback" (click)="goToStep('generate')">
+        ⬅ Back
+      </button>
+    </div>
+
+    <div class="course-summary">
+      <div *ngFor="let c of courseSummary" class="course-section">
+        <h3 class="course-title">{{ c.course }}</h3>
+        
+        <!-- Loop through each year level group -->
+        <div *ngFor="let yearGroup of c.yearLevelGroups" class="year-level-section">
+          <div class="year-level-header">
+            <span class="year-level-badge-large">Year {{ yearGroup.yearLevel }}</span>
+          </div>
+          
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Day</th>
+                <th>Time Slot</th>
+                <th>Subject ID</th>
+                <th>Title</th>
+                <th>Code</th>
+                <th>Room</th>
+                <th>Instructor</th>
+              </tr>
+            </thead>
+            <tbody>
+              <ng-container *ngFor="let g of yearGroup.groups">
+                <tr *ngFor="let ex of g.exams; let eIdx = index">
+                  <td *ngIf="eIdx === 0" [attr.rowspan]="g.exams.length" class="group-cell">
+                    <strong>{{ g.day }}</strong>
+                  </td>
+                  <td *ngIf="eIdx === 0" [attr.rowspan]="g.exams.length" class="group-cell">
+                    {{ g.slot }}
+                  </td>
+                  <td>{{ ex.SUBJECT_ID }}</td>
+                  <td>{{ ex.DESCRIPTIVE_TITLE }}</td>
+                  <td>{{ ex.CODE }}</td>
+                  <td>{{ ex.ROOM }}</td>
+                  <td>{{ ex.INSTRUCTOR }}</td>
+                </tr>
+              </ng-container>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-3">
+      <button class="btn btn-primary" (click)="viewRoomTimeTable()">
+        View Room-Time Table
+      </button>
+      <button class="btn btn-outline" (click)="viewCourseGrid()">
+        View Course Grid
+      </button>
+    </div>
+  </div>
+
+  <!-- STEP 4: ROOM TIME TABLE (WITH YEAR LEVEL) -->
+  <div *ngIf="currentStep === 'timetable'" class="card">
+    <div class="card-header">
+      <h2>Step 4: Room-Time Table</h2>
+      <button class="btnback" (click)="goToStep('summary')">
+        ⬅ Back
+      </button>
+    </div>
+
+    <!-- Day Tabs -->
+    <div class="tabs">
+      <button 
+        *ngFor="let day of roomTimeData.days; let i = index" 
+        class="tab" 
+        [class.active]="activeDay === day"
+        (click)="activeDay = day">
+        {{ day }}
+        <span *ngIf="examDates[days.indexOf(day)]" class="badge">
+          {{ examDates[days.indexOf(day)] | date: 'MM/dd' }}
+        </span>
+      </button>
+    </div>
+
+    <!-- Time Table Grid -->
+    <div class="table-responsive">
+      <table class="timetable">
+        <thead>
+          <tr>
+            <th class="sticky-col">Room</th>
+            <th *ngFor="let slot of timeSlots">{{ slot }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr *ngFor="let room of roomTimeData.rooms">
+            <td class="sticky-col room-label">
+              {{ room }}
+              <small *ngIf="roomCapacities.has(room)" style="display: block; color: #666; font-size: 10px;">
+                Cap: {{ roomCapacities.get(room) }}
+              </small>
+            </td>
+            <td *ngFor="let slot of timeSlots" 
+                [style.background-color]="
+  roomTimeData.table[activeDay] 
+    && roomTimeData.table[activeDay][room] 
+    && roomTimeData.table[activeDay][room][slot]
+      ? getDeptColor(roomTimeData.table[activeDay][room][slot].dept)
+      : 'transparent'
+">
+
+              <div *ngIf="
+  roomTimeData.table[activeDay] 
+    && roomTimeData.table[activeDay][room] 
+    && roomTimeData.table[activeDay][room][slot]
+" class="cell-content">
+                <strong>{{ roomTimeData.table[activeDay][room][slot].code }}</strong>
+                <small>{{ roomTimeData.table[activeDay][room][slot].course }}</small>
+                <span class="year-level-badge-small">Yr {{ roomTimeData.table[activeDay][room][slot].yearLevel }}</span>
+              </div>
+              <span *ngIf="!(
+  roomTimeData.table[activeDay] 
+    && roomTimeData.table[activeDay][room] 
+    && roomTimeData.table[activeDay][room][slot]
+)" class="empty-cell">—</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend">
+      <h4>Department Colors:</h4>
+      <div class="legend-items">
+        <span class="legend-item" style="background-color: #ef4444;">SACE</span>
+        <span class="legend-item" style="background-color: #facc15; color: #000;">SABH</span>
+        <span class="legend-item" style="background-color: #3b82f6;">SECAP</span>
+        <span class="legend-item" style="background-color: #22c55e;">SHAS</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- COURSE GRID (WITH YEAR LEVEL) -->
+  <div *ngIf="currentStep === 'coursegrid'" class="card">
+    <div class="card-header">
+      <h2>Step 5: Course Grid Editor</h2>
+      <button class="btnback" (click)="goToStep('summary')">⬅ Back</button>
+    </div>
+
+    <div class="tabs">
+      <button 
+        *ngFor="let day of courseGridData.days"
+        class="tab"
+        [class.active]="activeDay === day"
+        (click)="activeDay = day">
+        {{ day }}
+        <span *ngIf="examDates[days.indexOf(day)]" class="badge">
+          {{ examDates[days.indexOf(day)] | date: 'MM/dd' }}
+        </span>
+      </button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th class="sticky-col">Course</th>
+          <th *ngFor="let slot of timeSlots">{{ slot }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <ng-container *ngFor="let course of courseGridData.courses">
+          <ng-container *ngFor="let year of [1,2,3,4]">
+            <!-- Only render row if there's at least one exam for this course & year -->
+            <tr *ngIf="hasExamsForYear(course, year, activeDay)">
+              <td class="sticky-col course-label">{{ course }} Yr {{ year }}</td>
+              <td *ngFor="let slot of timeSlots">
+                <ng-container *ngIf="courseGridData.grid 
+                                     && courseGridData.grid[activeDay] 
+                                     && courseGridData.grid[activeDay][course] 
+                                     && courseGridData.grid[activeDay][course][slot]?.length > 0">
+                  <ng-container *ngFor="let exam of courseGridData.grid[activeDay][course][slot]">
+                    <div *ngIf="exam.yearLevel === year" class="exam-chip" [style.background-color]="getDeptColor(exam.dept)">
+                      <div class="chip-header">
+                        <strong>{{ exam.subjectId }}</strong>
+                        <span class="year-level-badge-chip">Yr {{ exam.yearLevel }}</span>
+                        <div class="chip-actions">
+                          <button class="btn-icon-sm" [title]="'Move ' + exam.title" (click)="showMoveOptions(getFullExam(exam, activeDay, slot), activeDay, slot)">📍</button>
+                          <button class="btn-icon-sm" [title]="'Remove ' + exam.title" (click)="removeExamByTitle(exam.title)">🗑️</button>
+                        </div>
+                      </div>
+                      <small class="room-info">Room: {{ exam.room }}</small>
+                    </div>
+                  </ng-container>
+                </ng-container>
+                <ng-template #emptyCell>
+                  <span class="empty-cell">—</span>
+                </ng-template>
+              </td>
+            </tr>
+          </ng-container>
+        </ng-container>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- MOVE EXAM POPUP -->
+  <div *ngIf="movePopupVisible && moveExamData" class="move-popup">
+    <h3>Move Exam: {{ moveExamData.examRef?.DESCRIPTIVE_TITLE }}</h3>
+
+    <div *ngIf="safeSlots.length > 0; else noSlots">
+      <button *ngFor="let s of safeSlots" (click)="applyMove(s.day, s.slot)">
+        {{ s.day }} - {{ s.slot }}
+      </button>
+    </div>
+
+    <ng-template #noSlots>
+      <p>No safe slots available.</p>
+    </ng-template>
+
+    <button (click)="closeMovePopup()">Cancel</button>
+  </div>
+
+</div>
+
+
+
+
+
+
+
+
+

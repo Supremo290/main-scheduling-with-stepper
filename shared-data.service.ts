@@ -172,6 +172,9 @@ export class SharedDataService {
     return this.loadFromStorage(this.roomMappingKey);
   }
 
+
+  
+
   clearRoomMapping() {
     localStorage.removeItem(this.roomMappingKey);
   }

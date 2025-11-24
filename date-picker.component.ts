@@ -28,7 +28,7 @@ export class DatePickerComponent implements OnInit {
   selectedTermYear: string = '';
   termYearOptions: { label: string, value: string }[] = [];
 
-  showEditor = false;
+  showEditor = true; // ✅ Always show editor in dialog mode
   editingGroup: ExamGroup | null = null;
 
   maxDays = 5;
@@ -48,7 +48,13 @@ export class DatePickerComponent implements OnInit {
 
     this.generateTermYearOptions();
     this.loadStoredGroups();
-    this.resetExamDays();
+    
+    // ✅ Check if opened for editing
+    if (this.data && this.data.mode === 'edit' && this.data.group) {
+      this.editGroup(this.data.group);
+    } else {
+      this.resetExamDays();
+    }
   }
 
   generateTermYearOptions() {
@@ -145,7 +151,6 @@ export class DatePickerComponent implements OnInit {
         if (currentlySelected && currentlySelected.name === this.editingGroup.name) {
           console.log(`✏️ Updating currently selected group "${updatedGroup.name}"`);
           
-          // ✅ Update SharedDataService - this triggers migration in student-mapping
           this.sharedData.setExamDates(updatedGroup.days);
           this.sharedData.setSelectedExamGroup(updatedGroup);
           this.sharedData.setActiveTerm(updatedGroup.termYear!);
@@ -175,22 +180,19 @@ export class DatePickerComponent implements OnInit {
     this.saveAllGroups();
     this.loadStoredGroups();
 
-    this.resetExamDays();
-    this.newGroupName = '';
-    this.selectedTermYear = '';
-    this.showEditor = false;
-    this.editingGroup = null;
+    // ✅ Close dialog after saving
+    if (this.dialogRef) {
+      this.dialogRef.close(updatedGroup);
+    }
   }
 
   deleteGroup(groupName: string) {
     if (confirm(`Delete exam group "${groupName}"?`)) {
-      // ✅ Find the group being deleted to get its term/year
       const groupToDelete = this.savedExamGroups.find(g => g.name === groupName);
       
       const currentlySelected = this.sharedData.getSelectedExamGroup();
       const isSelectedGroup = currentlySelected && currentlySelected.name === groupName;
 
-      // Remove from saved groups
       this.savedExamGroups = this.savedExamGroups.filter(g => g.name !== groupName);
       this.saveAllGroups();
       this.loadStoredGroups();
@@ -198,23 +200,19 @@ export class DatePickerComponent implements OnInit {
       if (isSelectedGroup) {
         console.log(`🗑️ Deleted selected group "${groupName}". Clearing all data...`);
         
-        // ✅ Clear shared data service
         this.sharedData.clearExamDates();
         this.sharedData.clearSelectedExamGroup();
         this.sharedData.clearActiveTerm();
         
-        // ✅ Clear the saved student mapping for this group
         if (groupToDelete && groupToDelete.termYear) {
           this.sharedData.clearStudentMappingForGroup(groupName, groupToDelete.termYear);
           console.log(`🗑️ Cleared student mapping for "${groupName}" (${groupToDelete.termYear})`);
         }
         
-        // Also clear legacy student mapping
         this.sharedData.clearStudentMapping();
         
         alert(`⚠️ Deleted "${groupName}". All associated data has been cleared.`);
       } else {
-        // ✅ Even if not selected, clear its saved mapping data
         if (groupToDelete && groupToDelete.termYear) {
           this.sharedData.clearStudentMappingForGroup(groupName, groupToDelete.termYear);
           console.log(`🗑️ Cleared student mapping for "${groupName}" (${groupToDelete.termYear})`);
@@ -228,7 +226,6 @@ export class DatePickerComponent implements OnInit {
   selectGroup(group: ExamGroup) {
     this.selectedGroupName = group.name;
     
-    // ✅ Set all data in SharedDataService
     this.sharedData.setExamDates(group.days);
     this.sharedData.setSelectedExamGroup(group);
     
@@ -239,6 +236,12 @@ export class DatePickerComponent implements OnInit {
     
     console.log(`✅ Selected "${group.name}" with ${group.days.length} days:`, group.days);
     alert(`✅ Selected "${group.name}" for scheduling.`);
+  }
+
+  closeDialog() {
+    if (this.dialogRef) {
+      this.dialogRef.close();
+    }
   }
 
   dateFilter = (date: Date | null): boolean => {
@@ -265,25 +268,59 @@ export class DatePickerComponent implements OnInit {
   }
 
   getDateRange(days: ExamDay[]): string {
-  if (!days || days.length === 0) return '-';
+    if (!days || days.length === 0) return '-';
 
-  const sorted = [...days].sort(
-    (a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime()
-  );
+    const sorted = [...days].sort(
+      (a, b) => new Date(a.date!).getTime() - new Date(b.date!).getTime()
+    );
 
-  const dateStrings = sorted.map(d => {
-    const dt = new Date(d.date!);
-    const mm = String(dt.getMonth() + 1).padStart(2, '0');
-    const dd = String(dt.getDate()).padStart(2, '0');
-    const yy = String(dt.getFullYear()).slice(-2);
+    const dateStrings = sorted.map(d => {
+      const dt = new Date(d.date!);
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const dd = String(dt.getDate()).padStart(2, '0');
+      const yy = String(dt.getFullYear()).slice(-2);
+      const weekday = dt.toLocaleDateString('en-US', { weekday: 'long' });
+      return `${mm}/${dd}/${yy} (${weekday})`;
+    });
 
-    // Get weekday name (Mon, Tue, Wed...)
-    const weekday = dt.toLocaleDateString('en-US', { weekday: 'long' });
+    return dateStrings.join(', ');
+  }
 
-    return `${mm}/${dd}/${yy} (${weekday})`;
-  });
-
-  return dateStrings.join(', ');
+  isFormInvalid(): boolean {
+    const hasValidDates = this.examDays.filter(d => d.date).length > 0;
+    const hasGroupName = this.newGroupName && this.newGroupName.trim().length > 0;
+    return !this.selectedTermYear || !hasGroupName || !hasValidDates;
+  }
 }
 
-}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
