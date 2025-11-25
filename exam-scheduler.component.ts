@@ -1772,16 +1772,16 @@ ngOnInit() {
         console.log('📊 Has saved schedule:', hasSchedule);
         
         if (hasSchedule && datesChanged) {
-          console.log('⚠️ Dates changed and schedule exists - prompting for regeneration');
+          console.log('⚠️ Dates changed and schedule exists - prompting for action');
           
-          // First prompt: Regenerate or not?
+          // Simple 2-option prompt: Regenerate or Keep
           Swal.fire({
             title: 'Schedule Needs Update',
             text: `You changed the exam dates for "${updatedGroup.name}". The existing schedule is now outdated. Would you like to regenerate the schedule now?`,
             type: 'question',
             showCancelButton: true,
             confirmButtonText: '🔄 Regenerate Now',
-            cancelButtonText: '✕ Cancel',
+            cancelButtonText: '📋 Keep Old Schedule',
             confirmButtonColor: '#10b981',
             cancelButtonColor: '#6b7280'
           }).then((choice: any) => {
@@ -1791,30 +1791,13 @@ ngOnInit() {
               this.regenerateScheduleForGroup(updatedGroup);
               
             } else {
-              // User cancelled - ask what to do with old schedule
-              console.log('❌ User cancelled regeneration');
+              // User chose: Keep Old Schedule
+              console.log('ℹ️ User chose to keep old schedule with new dates');
               
-              Swal.fire({
-                title: 'Clear Old Schedule?',
-                text: `The old schedule for "${updatedGroup.name}" is outdated. Would you like to clear it or keep it?`,
-                type: 'warning',
-                showCancelButton: true,
-                confirmButtonText: '🗑️ Clear Old Schedule',
-                cancelButtonText: '📋 Keep Old Schedule',
-                confirmButtonColor: '#f59e0b',
-                cancelButtonColor: '#6b7280'
-              }).then((clearChoice: any) => {
-                if (clearChoice.value) {
-                  // User chose: Clear Old Schedule
-                  console.log('🗑️ User chose to clear old schedule');
-                  this.clearScheduleForGroup(updatedGroup.name, updatedGroup.termYear || '');
-                  this.showToast('Info', `Cleared old schedule for "${updatedGroup.name}". Generate a new one when ready.`, 'info');
-                } else {
-                  // User chose: Keep Old Schedule
-                  console.log('ℹ️ User chose to keep old schedule');
-                  this.showToast('Warning', `Old schedule kept for "${updatedGroup.name}". It may not match the new dates!`, 'warning');
-                }
-              });
+              // Update the schedule's date mappings to the new dates
+              this.updateScheduleDateMappings(updatedGroup);
+              
+              this.showToast('Success', `Schedule kept for "${updatedGroup.name}" with updated dates!`, 'success');
             }
           });
           
@@ -1965,6 +1948,78 @@ ngOnInit() {
           this.currentStep === 'coursegrid') {
         this.currentStep = 'import';
       }
+    }
+  }
+
+  updateScheduleDateMappings(group: ExamGroup) {
+    console.log('🔄 Updating date mappings for group:', group.name);
+    
+    const key = `schedule_${group.name}_${group.termYear}`;
+    const saved = localStorage.getItem(key);
+    
+    if (!saved) {
+      console.warn('⚠️ No saved schedule found to update');
+      return;
+    }
+    
+    try {
+      const scheduleData = JSON.parse(saved);
+      console.log('📊 Loaded schedule data:', {
+        scheduleEntries: scheduleData.generatedSchedule ? scheduleData.generatedSchedule.length : 0,
+        oldDates: scheduleData.examDates
+      });
+      
+      // Update the examDates array with new dates from the group
+      const newExamDates = group.days.map(d => 
+        d.date ? new Date(d.date).toLocaleDateString('en-CA') : ''
+      ).filter(d => d !== '');
+      
+      console.log('📅 New exam dates:', newExamDates);
+      
+      // Check if number of days changed
+      const oldDaysCount = scheduleData.examDates ? scheduleData.examDates.length : 0;
+      const newDaysCount = newExamDates.length;
+      
+      if (newDaysCount < oldDaysCount) {
+        console.warn(`⚠️ WARNING: Reduced from ${oldDaysCount} days to ${newDaysCount} days`);
+        console.warn('⚠️ Some exams may be scheduled on days that no longer exist!');
+      } else if (newDaysCount > oldDaysCount) {
+        console.log(`✅ Increased from ${oldDaysCount} days to ${newDaysCount} days`);
+      }
+      
+      // Update the examDates in the saved data
+      scheduleData.examDates = newExamDates;
+      scheduleData.lastUpdated = new Date().toISOString();
+      
+      // Save back to localStorage
+      localStorage.setItem(key, JSON.stringify(scheduleData));
+      console.log('💾 Saved updated date mappings to localStorage');
+      
+      // If this is the currently selected group, update component state
+      if (this.selectedExamGroup && this.selectedExamGroup.name === group.name) {
+        console.log('🔄 Updating currently selected group with new dates');
+        
+        // Update the component's exam dates
+        this.examDates = newExamDates;
+        this.days = this.examDates.map((_, i) => `Day ${i + 1}`);
+        this.activeDay = this.days[0] || 'Day 1';
+        
+        // Update room time data days
+        this.roomTimeData.days = [...this.days];
+        this.courseGridData.days = [...this.days];
+        
+        // Force change detection
+        this.cdr.detectChanges();
+        
+        console.log('✅ Component state updated with new dates');
+        console.log('📅 New days array:', this.days);
+        console.log('📅 New exam dates:', this.examDates);
+      }
+      
+      console.log('✅ Successfully updated date mappings for schedule');
+      
+    } catch (error) {
+      console.error('❌ Error updating date mappings:', error);
     }
   }
 
