@@ -196,7 +196,7 @@
     </div>
   </div>
 
-  <!-- STEP 2: GENERATED SCHEDULE -->
+  <!-- ✅ STEP 2: GENERATED SCHEDULE - FIXED TABLE LAYOUT -->
   <div *ngIf="currentStep === 'generate'" class="card">
     <div class="card-header">
       <h2>Step 2: Generated Schedule</h2>
@@ -206,10 +206,6 @@
         </button>
         <button class="btn btn-outline" (click)="downloadScheduleCSV()">
           💾 Download CSV
-        </button>
-        <button class="btn btn-success" (click)="saveToLocalStorage()">
-          <mat-icon>save</mat-icon>
-          Save Schedule
         </button>
       </div>
     </div>
@@ -221,81 +217,115 @@
       </span>
     </p>
 
-    <div class="table-responsive">
-      <table class="data-table">
-        <thead>
+    <!-- ✅ FIXED: Scrollable container with proper table layout -->
+    <div style="overflow-x: auto; overflow-y: auto; max-height: 600px; border: 1px solid #ddd; margin-top: 20px;">
+      <table style="width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 14px;">
+        <!-- ✅ FIXED: Sticky header with proper widths -->
+        <thead style="position: sticky; top: 0; background-color: #2c3e50; z-index: 10;">
           <tr>
-            <th>Code</th>
-            <th>Subject ID</th>
-            <th>Title</th>
-            <th>Course</th>
-            <th>Year Level</th>
-            <th>Instructor</th>
-            <th>Dept</th>
-            <th>Day</th>
-            <th>Time</th>
-            <th>Room</th>
-            <th>Actions</th>
+            <th style="padding: 12px 8px; color: white; text-align: left; width: 80px; min-width: 80px; border: 1px solid #445566;">Code</th>
+            <th style="padding: 12px 8px; color: white; text-align: left; width: 110px; min-width: 110px; border: 1px solid #445566;">Subject ID</th>
+            <th style="padding: 12px 8px; color: white; text-align: left; width: 280px; min-width: 280px; border: 1px solid #445566;">Title</th>
+            <th style="padding: 12px 8px; color: white; text-align: left; width: 100px; min-width: 100px; border: 1px solid #445566;">Course</th>
+            <th style="padding: 12px 8px; color: white; text-align: center; width: 90px; min-width: 90px; border: 1px solid #445566;">Year Level</th>
+            <th style="padding: 12px 8px; color: white; text-align: left; width: 200px; min-width: 200px; border: 1px solid #445566;">Instructor</th>
+            <th style="padding: 12px 8px; color: white; text-align: left; width: 90px; min-width: 90px; border: 1px solid #445566;">Dept</th>
+            <th style="padding: 12px 8px; color: white; text-align: center; width: 90px; min-width: 90px; border: 1px solid #445566;">Day</th>
+            <th style="padding: 12px 8px; color: white; text-align: center; width: 120px; min-width: 120px; border: 1px solid #445566;">Time</th>
+            <th style="padding: 12px 8px; color: white; text-align: center; width: 90px; min-width: 90px; border: 1px solid #445566;">Room</th>
+            <th style="padding: 12px 8px; color: white; text-align: center; width: 110px; min-width: 110px; border: 1px solid #445566;">Actions</th>
           </tr>
         </thead>
+        
+        <!-- ✅ FIXED: Table body with matching column widths -->
         <tbody>
-          <tr *ngFor="let exam of generatedSchedule; let idx = index">
-            <td>
+          <tr *ngFor="let exam of generatedSchedule; let idx = index" style="border-bottom: 1px solid #ddd;">
+            <!-- Code -->
+            <td style="padding: 10px 8px; width: 80px; min-width: 80px; border: 1px solid #ddd;">
               <input 
                 *ngIf="editingRow === idx" 
                 class="form-control-sm" 
                 [(ngModel)]="editedExam.CODE"
+                style="width: 100%; box-sizing: border-box;"
               />
               <span *ngIf="editingRow !== idx">{{ exam.CODE }}</span>
             </td>
-            <td>{{ exam.SUBJECT_ID }}</td>
-            <td class="truncate">{{ exam.DESCRIPTIVE_TITLE }}</td>
-            <td>{{ exam.COURSE }}</td>
-            <td>
-              <span class="year-level-badge">{{ exam.YEAR_LEVEL }}</span>
+            
+            <!-- Subject ID -->
+            <td style="padding: 10px 8px; width: 110px; min-width: 110px; border: 1px solid #ddd;">{{ exam.SUBJECT_ID }}</td>
+            
+            <!-- Title -->
+            <td style="padding: 10px 8px; width: 280px; min-width: 280px; max-width: 280px; border: 1px solid #ddd; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" [title]="exam.DESCRIPTIVE_TITLE">
+              {{ exam.DESCRIPTIVE_TITLE }}
             </td>
-            <td>{{ exam.INSTRUCTOR }}</td>
-            <td>{{ exam.DEPT }}</td>
-            <td>
+            
+            <!-- Course -->
+            <td style="padding: 10px 8px; width: 100px; min-width: 100px; border: 1px solid #ddd;">{{ exam.COURSE }}</td>
+            
+            <!-- Year Level -->
+            <td style="padding: 10px 8px; width: 90px; min-width: 90px; text-align: center; border: 1px solid #ddd;">
+              <span class="year-level-badge" style="background-color: #8b5cf6; color: white; padding: 4px 10px; border-radius: 12px; font-size: 12px; display: inline-block;">
+                {{ exam.YEAR_LEVEL }}
+              </span>
+            </td>
+            
+            <!-- Instructor -->
+            <td style="padding: 10px 8px; width: 200px; min-width: 200px; border: 1px solid #ddd;">{{ exam.INSTRUCTOR }}</td>
+            
+            <!-- Dept -->
+            <td style="padding: 10px 8px; width: 90px; min-width: 90px; border: 1px solid #ddd;">{{ exam.DEPT }}</td>
+            
+            <!-- Day -->
+            <td style="padding: 10px 8px; width: 90px; min-width: 90px; text-align: center; border: 1px solid #ddd;">
               <select 
                 *ngIf="editingRow === idx" 
                 class="form-control-sm" 
-                [(ngModel)]="editedExam.DAY">
+                [(ngModel)]="editedExam.DAY"
+                style="width: 100%; box-sizing: border-box;">
                 <option *ngFor="let d of days" [value]="d">{{ d }}</option>
               </select>
               <span *ngIf="editingRow !== idx">{{ exam.DAY }}</span>
             </td>
-            <td>
+            
+            <!-- Time -->
+            <td style="padding: 10px 8px; width: 120px; min-width: 120px; text-align: center; border: 1px solid #ddd;">
               <select 
                 *ngIf="editingRow === idx" 
                 class="form-control-sm" 
-                [(ngModel)]="editedExam.SLOT">
+                [(ngModel)]="editedExam.SLOT"
+                style="width: 100%; box-sizing: border-box;">
                 <option *ngFor="let s of timeSlots" [value]="s">{{ s }}</option>
               </select>
               <span *ngIf="editingRow !== idx">{{ exam.SLOT }}</span>
             </td>
-            <td>
+            
+            <!-- Room -->
+            <td style="padding: 10px 8px; width: 90px; min-width: 90px; text-align: center; border: 1px solid #ddd;">
               <select 
                 *ngIf="editingRow === idx" 
                 class="form-control-sm" 
-                [(ngModel)]="editedExam.ROOM">
+                [(ngModel)]="editedExam.ROOM"
+                style="width: 100%; box-sizing: border-box;">
                 <option *ngFor="let r of (rooms.length > 0 ? rooms : ['A', 'C', 'K', 'L', 'M', 'N'])" [value]="r">{{ r }}</option>
               </select>
               <span *ngIf="editingRow !== idx">{{ exam.ROOM }}</span>
             </td>
-            <td>
-              <div *ngIf="editingRow === idx" class="action-buttons">
-                <button class="btn-icon btn-success" (click)="saveEdit()">✓</button>
-                <button class="btn-icon btn-danger" (click)="cancelEdit()">✗</button>
+            
+            <!-- Actions -->
+            <td style="padding: 10px 8px; width: 110px; min-width: 110px; text-align: center; border: 1px solid #ddd;">
+              <div *ngIf="editingRow === idx" style="display: flex; gap: 5px; justify-content: center;">
+                <button class="btn-icon btn-success" (click)="saveEdit()" style="padding: 5px 10px; cursor: pointer; background-color: #10b981; color: white; border: none; border-radius: 4px;">✓</button>
+                <button class="btn-icon btn-danger" (click)="cancelEdit()" style="padding: 5px 10px; cursor: pointer; background-color: #ef4444; color: white; border: none; border-radius: 4px;">✗</button>
               </div>
-              <button *ngIf="editingRow !== idx" class="btn-icon" (click)="startEdit(idx)">✏️</button>
+              <button *ngIf="editingRow !== idx" class="btn-icon" (click)="startEdit(idx)" style="padding: 5px 10px; cursor: pointer; background-color: #3b82f6; color: white; border: none; border-radius: 4px;">✏️</button>
             </td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <div class="mt-3">
+    <!-- Buttons below table -->
+    <div class="mt-3" style="margin-top: 20px; display: flex; gap: 10px;">
       <button class="btn btn-primary" (click)="viewCourseSummary()">
         View Course Summary
       </button>
@@ -469,66 +499,67 @@
       </button>
     </div>
 
-    <table>
-      <thead>
-        <tr>
-          <th class="sticky-col">Course</th>
-          <th *ngFor="let slot of timeSlots">{{ slot }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <ng-container *ngFor="let course of courseGridData.courses">
-          <ng-container *ngFor="let year of [1,2,3,4]">
-            <!-- Only render row if there's at least one exam for this course & year -->
-            <tr *ngIf="hasExamsForYear(course, year, activeDay)">
-              <td class="sticky-col course-label">{{ course }} Yr {{ year }}</td>
-              <td *ngFor="let slot of timeSlots">
-                <ng-container *ngIf="courseGridData.grid 
-                                     && courseGridData.grid[activeDay] 
-                                     && courseGridData.grid[activeDay][course] 
-                                     && courseGridData.grid[activeDay][course][slot]?.length > 0">
-                  <ng-container *ngFor="let exam of courseGridData.grid[activeDay][course][slot]">
-                    <div *ngIf="exam.yearLevel === year" class="exam-chip" [style.background-color]="getDeptColor(exam.dept)">
-                      <div class="chip-header">
-                        <strong>{{ exam.subjectId }}</strong>
-                        <span class="year-level-badge-chip">Yr {{ exam.yearLevel }}</span>
-                        <div class="chip-actions">
-                          <button class="btn-icon-sm" [title]="'Move ' + exam.title" (click)="showMoveOptions(getFullExam(exam, activeDay, slot), activeDay, slot)">📍</button>
-                          <button class="btn-icon-sm" [title]="'Remove ' + exam.title" (click)="removeExamByTitle(exam.title)">🗑️</button>
+    <div style="overflow-x: auto; max-height: 600px;">
+      <table style="min-width: 1200px; width: 100%;">
+        <thead style="position: sticky; top: 0; background: #2c3e50; z-index: 10;">
+          <tr>
+            <th class="sticky-col">Course</th>
+            <th *ngFor="let slot of timeSlots">{{ slot }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <ng-container *ngFor="let course of courseGridData.courses">
+            <ng-container *ngFor="let year of [1,2,3,4]">
+              <!-- Only render row if there's at least one exam for this course & year -->
+              <tr *ngIf="hasExamsForYear(course, year, activeDay)">
+                <td class="sticky-col course-label">{{ course }} Yr {{ year }}</td>
+                <td *ngFor="let slot of timeSlots">
+                  <ng-container *ngIf="courseGridData.grid 
+                                       && courseGridData.grid[activeDay] 
+                                       && courseGridData.grid[activeDay][course] 
+                                       && courseGridData.grid[activeDay][course][slot]?.length > 0">
+                    <ng-container *ngFor="let exam of courseGridData.grid[activeDay][course][slot]">
+                      <div *ngIf="exam.yearLevel === year" class="exam-chip" [style.background-color]="getDeptColor(exam.dept)">
+                        <div class="chip-header">
+                          <strong>{{ exam.subjectId }}</strong>
+                          <span class="year-level-badge-chip">Yr {{ exam.yearLevel }}</span>
+                          <div class="chip-actions">
+                            <button class="btn-icon-sm" [title]="'Move ' + exam.title" (click)="showMoveOptions(getFullExam(exam, activeDay, slot), activeDay, slot)">📍</button>
+                            <button class="btn-icon-sm" [title]="'Remove ' + exam.title" (click)="removeExamByTitle(exam.title)">🗑️</button>
+                          </div>
                         </div>
+                        <small class="room-info">Room: {{ exam.room }}</small>
                       </div>
-                      <small class="room-info">Room: {{ exam.room }}</small>
-                    </div>
+                    </ng-container>
                   </ng-container>
-                </ng-container>
-                <ng-template #emptyCell>
-                  <span class="empty-cell">—</span>
-                </ng-template>
-              </td>
-            </tr>
+                  <ng-template #emptyCell>
+                    <span class="empty-cell">—</span>
+                  </ng-template>
+                </td>
+              </tr>
+            </ng-container>
           </ng-container>
-        </ng-container>
-      </tbody>
-    </table>
-  </div>
-
-  <!-- MOVE EXAM POPUP -->
-  <div *ngIf="movePopupVisible && moveExamData" class="move-popup">
-    <h3>Move Exam: {{ moveExamData.examRef?.DESCRIPTIVE_TITLE }}</h3>
-
-    <div *ngIf="safeSlots.length > 0; else noSlots">
-      <button *ngFor="let s of safeSlots" (click)="applyMove(s.day, s.slot)">
-        {{ s.day }} - {{ s.slot }}
-      </button>
+        </tbody>
+      </table>
     </div>
 
-    <ng-template #noSlots>
-      <p>No safe slots available.</p>
-    </ng-template>
+    <!-- MOVE EXAM POPUP -->
+    <div *ngIf="movePopupVisible && moveExamData" class="move-popup">
+      <h3>Move Exam: {{ moveExamData.examRef?.DESCRIPTIVE_TITLE }}</h3>
 
-    <button (click)="closeMovePopup()">Cancel</button>
+      <div *ngIf="safeSlots.length > 0; else noSlots">
+        <button *ngFor="let s of safeSlots" (click)="applyMove(s.day, s.slot)">
+          {{ s.day }} - {{ s.slot }}
+        </button>
+      </div>
+
+      <ng-template #noSlots>
+        <p>No safe slots available.</p>
+      </ng-template>
+
+      <button (click)="closeMovePopup()">Cancel</button>
+    </div>
+
   </div>
 
 </div>
-
-

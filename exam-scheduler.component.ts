@@ -159,9 +159,7 @@ ngOnInit() {
     }
   });
   
-  if (this.hasSavedData()) {
-    this.showRestorePrompt();
-  }
+  // ✅ REMOVED: Old restore prompt on page load (now using per-group restore)
 }
 
   combineYearTerm() {
@@ -202,7 +200,52 @@ ngOnInit() {
       this.sharedData.setActiveTerm(group.termYear);
     }
     
-    this.showToast('Success', `Selected "${group.name}" with ${this.examDates.length} exam days`);
+    // ✅ NEW: Check if this group has a saved generated schedule
+    if (this.hasScheduleForGroup(group.name, group.termYear || '')) {
+      console.log('🔍 Saved schedule detected for group:', group.name);
+      
+      Swal.fire({
+        title: 'Saved Schedule Found!',
+        text: 'This exam group already has a generated schedule. Would you like to load it?',
+        type: 'question',
+        showCancelButton: true,
+        confirmButtonText: '📋 Load Saved Schedule',
+        cancelButtonText: '✕ Cancel',
+        confirmButtonColor: '#10b981',
+        cancelButtonColor: '#6b7280'
+      }).then((result: any) => {
+        console.log('💬 User clicked:', result);
+        
+        if (result.value) {
+          console.log('✅ User chose to load saved schedule');
+          // Load saved schedule and go to generate step
+          const loaded = this.loadScheduleForGroup(group.name, group.termYear || '');
+          console.log('📥 Load result:', loaded);
+          
+          if (loaded) {
+            this.currentStep = 'generate';
+            console.log('🎯 Set currentStep to:', this.currentStep);
+            console.log('📊 generatedSchedule length:', this.generatedSchedule.length);
+            this.showToast('Success', `Loaded saved schedule for "${group.name}"`);
+            
+            // Force Angular to detect changes
+            this.cdr.detectChanges();
+          } else {
+            console.error('❌ Failed to load schedule');
+            this.showToast('Error', 'Failed to load saved schedule');
+          }
+        } else {
+          console.log('❌ User cancelled - staying on current step');
+          // User cancelled - just show success for selecting the group
+          this.showToast('Success', `Selected "${group.name}" - Ready to load API data`);
+        }
+      });
+    } else {
+      // No saved schedule - normal flow
+      console.log('ℹ️ No saved schedule found for group:', group.name);
+      this.showToast('Success', `Selected "${group.name}" with ${this.examDates.length} exam days`);
+    }
+    
     this.showExamGroupManager = false;
   }
 
@@ -575,6 +618,12 @@ ngOnInit() {
 
     this.generatedSchedule = schedule;
     this.currentStep = 'generate';
+    
+    // ✅ NEW: Auto-save the generated schedule
+    if (this.selectedExamGroup && this.activeTerm) {
+      this.saveScheduleForGroup(this.selectedExamGroup.name, this.activeTerm);
+    }
+    
     this.showToast('Schedule Generated', `${schedule.length} exams scheduled successfully (Basic Algorithm)`);
   }
 
@@ -599,6 +648,11 @@ ngOnInit() {
         const result = this.assignWithAllConstraints(sortedSubjects, targets);
         
         Swal.close();
+        
+        // ✅ NEW: Auto-save the generated schedule
+        if (this.selectedExamGroup && this.activeTerm) {
+          this.saveScheduleForGroup(this.selectedExamGroup.name, this.activeTerm);
+        }
         
         setTimeout(() => {
           this.currentStep = 'generate';
@@ -1177,8 +1231,22 @@ ngOnInit() {
   }
 
   viewCourseGrid() {
+    console.log('🎨 Switching to course grid view...');
+    console.log('📊 Current schedule length:', this.generatedSchedule.length);
+    
     this.generateCourseGridData();
+    
+    console.log('📋 Course grid data generated:', {
+      courses: this.courseGridData.courses ? this.courseGridData.courses.length : 0,
+      days: this.courseGridData.days ? this.courseGridData.days.length : 0,
+      hasGrid: !!this.courseGridData.grid
+    });
+    
     this.currentStep = 'coursegrid';
+    console.log('✅ currentStep set to:', this.currentStep);
+    
+    // Force change detection
+    this.cdr.detectChanges();
   }
 
   getDeptColor(dept: string): string {
@@ -1415,7 +1483,10 @@ ngOnInit() {
     };
     localStorage.setItem('examScheduleData', JSON.stringify(dataToSave));
     
+    // ✅ NEW: Save schedule for this specific exam group
     if (this.selectedExamGroup && this.activeTerm) {
+      this.saveScheduleForGroup(this.selectedExamGroup.name, this.activeTerm);
+      
       this.sharedData.setStudentMappingForGroup(
         this.selectedExamGroup.name,
         this.activeTerm,
@@ -1424,6 +1495,101 @@ ngOnInit() {
     }
     
     this.global.swalSuccess("Schedule saved to local storage!");
+  }
+
+  // ✅ NEW: Save schedule data for a specific exam group
+  private saveScheduleForGroup(groupName: string, termYear: string) {
+    const key = `schedule_${groupName}_${termYear}`;
+    const scheduleData = {
+      generatedSchedule: this.generatedSchedule,
+      exams: this.exams,
+      rooms: this.rooms,
+      roomCapacities: Array.from(this.roomCapacities.entries()),
+      examDates: this.examDates,
+      subjectTypes: Array.from(this.subjectTypes.entries()),
+      timestamp: new Date().toISOString()
+    };
+    localStorage.setItem(key, JSON.stringify(scheduleData));
+    console.log(`💾 Saved schedule for group: ${groupName}`);
+  }
+
+  // ✅ NEW: Load schedule data for a specific exam group
+  private loadScheduleForGroup(groupName: string, termYear: string): boolean {
+    const key = `schedule_${groupName}_${termYear}`;
+    console.log(`🔍 Attempting to load schedule with key: ${key}`);
+    
+    const saved = localStorage.getItem(key);
+    
+    if (!saved) {
+      console.error(`❌ No saved data found for key: ${key}`);
+      return false;
+    }
+
+    console.log(`✅ Found saved data, length: ${saved.length} characters`);
+
+    try {
+      const scheduleData = JSON.parse(saved);
+      console.log('📦 Parsed schedule data:', {
+        hasGeneratedSchedule: !!scheduleData.generatedSchedule,
+        scheduleLength: scheduleData.generatedSchedule ? scheduleData.generatedSchedule.length : 0,
+        hasExams: !!scheduleData.exams,
+        examsLength: scheduleData.exams ? scheduleData.exams.length : 0,
+        hasRooms: !!scheduleData.rooms,
+        roomsLength: scheduleData.rooms ? scheduleData.rooms.length : 0,
+        examDatesLength: scheduleData.examDates ? scheduleData.examDates.length : 0
+      });
+      
+      this.generatedSchedule = scheduleData.generatedSchedule || [];
+      this.exams = scheduleData.exams || [];
+      this.rooms = scheduleData.rooms || [];
+      this.examDates = scheduleData.examDates || [];
+      
+      console.log('📝 Restored data to component:', {
+        generatedScheduleLength: this.generatedSchedule.length,
+        examsLength: this.exams.length,
+        roomsLength: this.rooms.length,
+        examDatesLength: this.examDates.length
+      });
+      
+      // Restore Maps
+      if (scheduleData.roomCapacities) {
+        this.roomCapacities = new Map(scheduleData.roomCapacities);
+        console.log(`🗺️ Restored roomCapacities: ${this.roomCapacities.size} entries`);
+      }
+      if (scheduleData.subjectTypes) {
+        this.subjectTypes = new Map(scheduleData.subjectTypes);
+        console.log(`🗺️ Restored subjectTypes: ${this.subjectTypes.size} entries`);
+      }
+      
+      // ✅ Update days array
+      this.days = this.examDates.map((_, i) => `Day ${i + 1}`);
+      this.activeDay = this.days[0] || 'Day 1';
+      
+      console.log(`📅 Updated days: ${this.days.join(', ')}`);
+      console.log(`🎯 Active day: ${this.activeDay}`);
+      
+      // Note: Course summary, room matrix, and course grid are generated on-demand
+      // when user clicks "View Course Summary", "View Room Grid", etc.
+      
+      // ✅ Force change detection to update UI
+      this.cdr.detectChanges();
+      console.log('🔄 Called change detection');
+      
+      console.log(`✅ Loaded saved schedule for group: ${groupName}`);
+      console.log(`📅 Generated on: ${scheduleData.timestamp}`);
+      console.log(`📊 Schedule entries: ${this.generatedSchedule.length}`);
+      
+      return true;
+    } catch (err) {
+      console.error('❌ Error loading saved schedule:', err);
+      return false;
+    }
+  }
+
+  // ✅ NEW: Check if a schedule exists for a group
+  hasScheduleForGroup(groupName: string, termYear: string): boolean {
+    const key = `schedule_${groupName}_${termYear}`;
+    return !!localStorage.getItem(key);
   }
 
   private convertScheduleToMappingFormat(): any[] {
@@ -1587,6 +1753,14 @@ ngOnInit() {
 
       this.savedExamGroups = this.savedExamGroups.filter(g => g.name !== groupName);
       localStorage.setItem('examGroups', JSON.stringify(this.savedExamGroups));
+      
+      // ✅ NEW: Delete saved schedule for this group
+      if (groupToDelete && groupToDelete.termYear) {
+        const scheduleKey = `schedule_${groupName}_${groupToDelete.termYear}`;
+        localStorage.removeItem(scheduleKey);
+        console.log(`🗑️ Deleted saved schedule for "${groupName}"`);
+      }
+      
       this.loadSavedExamGroups();
 
       if (isSelectedGroup) {
