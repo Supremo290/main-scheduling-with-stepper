@@ -1733,16 +1733,239 @@ ngOnInit() {
   }
 
   editGroup(group: ExamGroup) {
+    console.log('🔧 Starting edit for group:', group.name);
+    
+    // Store original data to compare changes later
+    const originalData = {
+      name: group.name,
+      termYear: group.termYear,
+      daysCount: group.days.length,
+      days: JSON.stringify(group.days) // Serialize for comparison
+    };
+    
     const dialogRef = this.dialog.open(DatePickerComponent, {
       width: '800px',
       maxHeight: '90vh',
       data: { group, mode: 'edit' }
     });
 
-    dialogRef.afterClosed().subscribe(() => {
+    dialogRef.afterClosed().subscribe((result) => {
+      console.log('🔙 Dialog closed with result:', result);
+      
+      // Reload groups from localStorage
       this.loadSavedExamGroups();
+      
+      // If update was successful, check for schedule regeneration
+      if (result && result.success) {
+        const updatedGroup = result.group;
+        console.log('✅ Group updated:', updatedGroup.name);
+        
+        // Check if dates changed
+        const datesChanged = 
+          originalData.daysCount !== updatedGroup.days.length ||
+          originalData.days !== JSON.stringify(updatedGroup.days);
+        
+        console.log('📅 Dates changed:', datesChanged);
+        
+        // Check if this group has a saved schedule
+        const hasSchedule = this.hasScheduleForGroup(updatedGroup.name, updatedGroup.termYear || '');
+        console.log('📊 Has saved schedule:', hasSchedule);
+        
+        if (hasSchedule && datesChanged) {
+          console.log('⚠️ Dates changed and schedule exists - prompting for regeneration');
+          
+          // First prompt: Regenerate or not?
+          Swal.fire({
+            title: 'Schedule Needs Update',
+            text: `You changed the exam dates for "${updatedGroup.name}". The existing schedule is now outdated. Would you like to regenerate the schedule now?`,
+            type: 'question',
+            showCancelButton: true,
+            confirmButtonText: '🔄 Regenerate Now',
+            cancelButtonText: '✕ Cancel',
+            confirmButtonColor: '#10b981',
+            cancelButtonColor: '#6b7280'
+          }).then((choice: any) => {
+            if (choice.value) {
+              // User chose: Regenerate Now
+              console.log('✅ User chose to regenerate');
+              this.regenerateScheduleForGroup(updatedGroup);
+              
+            } else {
+              // User cancelled - ask what to do with old schedule
+              console.log('❌ User cancelled regeneration');
+              
+              Swal.fire({
+                title: 'Clear Old Schedule?',
+                text: `The old schedule for "${updatedGroup.name}" is outdated. Would you like to clear it or keep it?`,
+                type: 'warning',
+                showCancelButton: true,
+                confirmButtonText: '🗑️ Clear Old Schedule',
+                cancelButtonText: '📋 Keep Old Schedule',
+                confirmButtonColor: '#f59e0b',
+                cancelButtonColor: '#6b7280'
+              }).then((clearChoice: any) => {
+                if (clearChoice.value) {
+                  // User chose: Clear Old Schedule
+                  console.log('🗑️ User chose to clear old schedule');
+                  this.clearScheduleForGroup(updatedGroup.name, updatedGroup.termYear || '');
+                  this.showToast('Info', `Cleared old schedule for "${updatedGroup.name}". Generate a new one when ready.`, 'info');
+                } else {
+                  // User chose: Keep Old Schedule
+                  console.log('ℹ️ User chose to keep old schedule');
+                  this.showToast('Warning', `Old schedule kept for "${updatedGroup.name}". It may not match the new dates!`, 'warning');
+                }
+              });
+            }
+          });
+          
+        } else if (hasSchedule && !datesChanged) {
+          // Dates didn't change, just show success
+          console.log('ℹ️ Dates unchanged, no regeneration needed');
+          this.showToast('Success', `Updated "${updatedGroup.name}" successfully`);
+          
+        } else {
+          // No existing schedule, just show success
+          console.log('ℹ️ No existing schedule, showing success message');
+          this.showToast('Success', `Updated "${updatedGroup.name}" successfully`);
+        }
+        
+        // If the edited group was the currently selected one, update it
+        if (this.selectedExamGroup && this.selectedExamGroup.name === group.name) {
+          console.log('🔄 Updating currently selected group');
+          
+          const reloadedGroup = this.savedExamGroups.find(g => g.name === updatedGroup.name);
+          if (reloadedGroup) {
+            this.selectedExamGroup = reloadedGroup;
+            this.activeTerm = reloadedGroup.termYear || '';
+            
+            this.examDates = reloadedGroup.days.map(d => 
+              d.date ? new Date(d.date).toLocaleDateString('en-CA') : ''
+            ).filter(d => d !== '');
+            
+            this.days = this.examDates.map((_, i) => `Day ${i + 1}`);
+            this.activeDay = this.days[0] || 'Day 1';
+            
+            // Update shared data service
+            this.sharedData.setSelectedExamGroup(reloadedGroup);
+            this.sharedData.setExamDates(reloadedGroup.days);
+            if (reloadedGroup.termYear) {
+              this.sharedData.setActiveTerm(reloadedGroup.termYear);
+            }
+          }
+        }
+      }
+      
+      // Force change detection
       this.cdr.detectChanges();
     });
+  }
+
+  regenerateScheduleForGroup(group: ExamGroup) {
+    console.log('🔄 Starting regeneration for group:', group.name);
+    
+    // Select this group
+    this.selectedExamGroup = group;
+    this.activeTerm = group.termYear || '';
+    
+    this.examDates = group.days.map(d => 
+      d.date ? new Date(d.date).toLocaleDateString('en-CA') : ''
+    ).filter(d => d !== '');
+    
+    this.days = this.examDates.map((_, i) => `Day ${i + 1}`);
+    this.activeDay = this.days[0] || 'Day 1';
+    
+    // Update shared data
+    this.sharedData.setSelectedExamGroup(group);
+    this.sharedData.setExamDates(group.days);
+    if (group.termYear) {
+      this.sharedData.setActiveTerm(group.termYear);
+    }
+    
+    // Check if we have exam data loaded
+    if (this.exams.length > 0 && this.rooms.length > 0) {
+      console.log('✅ Exam data is loaded, can regenerate immediately');
+      
+      // Clear old schedule
+      this.clearScheduleForGroup(group.name, group.termYear || '');
+      
+      // Ask which algorithm to use
+      Swal.fire({
+        title: 'Choose Generation Method',
+        html: `
+          <div style="text-align: left; padding: 10px;">
+            <p><strong>Basic Algorithm:</strong></p>
+            <ul style="margin-left: 20px; font-size: 14px;">
+              <li>Fast generation</li>
+              <li>Simple rules</li>
+              <li>Good for drafts</li>
+            </ul>
+            <br>
+            <p><strong>Enhanced Algorithm:</strong></p>
+            <ul style="margin-left: 20px; font-size: 14px;">
+              <li>1.5-hour breaks enforced</li>
+              <li>Gen-Ed NOT at 7:30 AM</li>
+              <li>No back-to-back majors</li>
+              <li>Even distribution</li>
+              <li>Capacity-aware rooms</li>
+            </ul>
+          </div>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Enhanced Algorithm',
+        cancelButtonText: 'Basic Algorithm'
+      }).then((choice) => {
+        if (choice.value) {
+          this.generateEnhancedSchedule();
+        } else if (choice.dismiss === Swal.DismissReason.cancel) {
+          this.generateBasicSchedule();
+        }
+      });
+      
+    } else {
+      console.log('⚠️ No exam data loaded, need to load from API first');
+      
+      Swal.fire({
+        title: 'Load Exam Data First',
+        html: `
+          <p>To regenerate the schedule, you need to load exam data from the API first.</p>
+          <br>
+          <p>Would you like to load the data now?</p>
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Load Data Now',
+        cancelButtonText: 'Cancel',
+        confirmButtonColor: '#3b82f6'
+      }).then((choice) => {
+        if (choice.value) {
+          // Go to import step
+          this.currentStep = 'import';
+          this.showToast('Info', 'Click "Load Exam Data from API" to load data, then generate schedule', 'info');
+        }
+      });
+    }
+  }
+
+  clearScheduleForGroup(groupName: string, termYear: string) {
+    const key = `schedule_${groupName}_${termYear}`;
+    localStorage.removeItem(key);
+    console.log(`🗑️ Cleared schedule for group: ${groupName} (${termYear})`);
+    
+    // If this is the currently loaded schedule, clear it from component
+    if (this.selectedExamGroup && this.selectedExamGroup.name === groupName) {
+      console.log('🗑️ Clearing currently displayed schedule');
+      this.generatedSchedule = [];
+      this.courseSummary = [];
+      this.roomTimeData = { table: {}, rooms: [], days: [] };
+      this.courseGridData = { grid: {}, courses: [], days: [] };
+      
+      // Go back to import step if we're on generate step
+      if (this.currentStep === 'generate' || 
+          this.currentStep === 'summary' || 
+          this.currentStep === 'timetable' || 
+          this.currentStep === 'coursegrid') {
+        this.currentStep = 'import';
+      }
+    }
   }
 
   deleteGroup(groupName: string) {

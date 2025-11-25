@@ -154,8 +154,13 @@ export class DatePickerComponent implements OnInit {
   console.log('💾 Saving group with termYear:', this.selectedTermYear);
 
   if (this.editingGroup) {
-    const index = this.savedExamGroups.indexOf(this.editingGroup);
+    // ✅ FIXED: Use findIndex with name comparison instead of indexOf with object reference
+    const index = this.savedExamGroups.findIndex(g => g.name === this.editingGroup.name);
+    console.log('🔍 Looking for group:', this.editingGroup.name);
+    console.log('📍 Found at index:', index);
+    
     if (index !== -1) {
+      console.log('✅ Updating group at index:', index);
       this.savedExamGroups[index] = updatedGroup;
       
       const currentlySelected = this.sharedData.getSelectedExamGroup();
@@ -168,6 +173,9 @@ export class DatePickerComponent implements OnInit {
         
         console.log("✅ Updated exam dates, triggering migration in student-mapping");
       }
+    } else {
+      console.error('❌ ERROR: Could not find group to update!');
+      console.error('❌ Available groups:', this.savedExamGroups.map(g => g.name));
     }
     alert('✏️ Exam group updated! Your schedule data has been preserved.');
   } else {
@@ -192,7 +200,7 @@ export class DatePickerComponent implements OnInit {
   this.loadStoredGroups();
 
   if (this.dialogRef) {
-    this.dialogRef.close(updatedGroup);
+    this.dialogRef.close({ success: true, group: updatedGroup });
   }
 }
 
