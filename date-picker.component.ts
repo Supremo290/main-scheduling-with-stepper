@@ -24,7 +24,7 @@ export class DatePickerComponent implements OnInit {
   savedExamGroups: ExamGroup[] = [];
   selectedGroupName: string | null = null;
   newGroupName: string = '';
-  
+  examGroupOptions: string[] = ['PRELIM', 'MIDTERM', 'FINAL', 'SUMMER'];
   selectedTermYear: string = '';
   termYearOptions: { label: string, value: string }[] = [];
 

@@ -15,10 +15,14 @@
   </mat-form-field>
 
   <!-- Group Name Input -->
-  <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 15px;">
-    <mat-label>Exam Group Name (e.g. Prelim, Midterm, Finals)</mat-label>
-    <input matInput [(ngModel)]="newGroupName" placeholder="Enter exam group name">
-  </mat-form-field>
+ <mat-form-field appearance="outline" style="width: 100%; margin-bottom: 15px;">
+  <mat-label>Exam Group Name</mat-label>
+  <mat-select [(ngModel)]="newGroupName">
+    <mat-option *ngFor="let groupName of examGroupOptions" [value]="groupName">
+      {{ groupName }}
+    </mat-option>
+  </mat-select>
+</mat-form-field>
 
   <!-- Date Picker Inputs -->
   <div style="margin-bottom: 20px;">

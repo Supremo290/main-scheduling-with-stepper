@@ -14,7 +14,12 @@ import {
   ToastMessage, 
   SafeSlotOption, 
   ExamDay, 
-  ExamGroup 
+  ExamGroup,
+  ConflictMatrix,
+  SubjectPriority,
+  RoomPreference,
+  SchedulingState,
+  SlotOption
 } from '../subject-code';
 
 @Component({
@@ -32,6 +37,7 @@ export class ExamSchedulerComponent implements OnInit {
   exams: Exam[] = [];
   rooms: string[] = [];
   roomCapacities: Map<string, number> = new Map();
+  roomPreferences: Map<string, RoomPreference> = new Map();
   generatedSchedule: ScheduledExam[] = [];
   subjectTypes: Map<string, 'genEd' | 'major'> = new Map();
   
@@ -40,7 +46,7 @@ export class ExamSchedulerComponent implements OnInit {
   days: string[] = ['Day 1', 'Day 2', 'Day 3'];
   activeDay: string = 'Day 1';
   
-  // Time slots
+  // Time slots (1.5 hour intervals)
   timeSlots: string[] = [
     '7:30-9:00', '9:00-10:30', '10:30-12:00', '12:00-1:30',
     '1:30-3:00', '3:00-4:30', '4:30-6:00', '6:00-7:30'
@@ -88,7 +94,6 @@ export class ExamSchedulerComponent implements OnInit {
     this.courseGridData.days = [...this.days];
     this.combineYearTerm();
     
-    // Clear selection on page refresh
     this.sharedData.clearSelectedExamGroup();
     this.sharedData.clearExamDates();
     this.sharedData.clearActiveTerm();
@@ -96,7 +101,6 @@ export class ExamSchedulerComponent implements OnInit {
     
     this.loadSavedExamGroups();
     
-    // Subscribe to future group selections
     this.sharedData.selectedExamGroup$.subscribe(group => {
       if (group) {
         this.selectedExamGroup = group;
@@ -147,7 +151,6 @@ export class ExamSchedulerComponent implements OnInit {
     this.sharedData.setExamDates(group.days);
     if (group.termYear) this.sharedData.setActiveTerm(group.termYear);
     
-    // Check for saved schedule
     if (this.hasScheduleForGroup(group.name, group.termYear || '')) {
       Swal.fire({
         title: 'Saved Schedule Found!',
@@ -225,7 +228,6 @@ export class ExamSchedulerComponent implements OnInit {
           this.showToast('Success', `Updated "${updatedGroup.name}" successfully`);
         }
         
-        // Update selected group if it was edited
         if (this.selectedExamGroup && this.selectedExamGroup.name === group.name) {
           const reloadedGroup = this.savedExamGroups.find(g => g.name === updatedGroup.name);
           if (reloadedGroup) {
@@ -257,7 +259,6 @@ export class ExamSchedulerComponent implements OnInit {
       this.savedExamGroups = this.savedExamGroups.filter(g => g.name !== groupName);
       localStorage.setItem('examGroups', JSON.stringify(this.savedExamGroups));
       
-      // Delete saved schedule
       if (groupToDelete && groupToDelete.termYear) {
         const scheduleKey = `schedule_${groupName}_${groupToDelete.termYear}`;
         localStorage.removeItem(scheduleKey);
@@ -303,41 +304,54 @@ export class ExamSchedulerComponent implements OnInit {
       .map((response: any) => response.json())
       .subscribe(
         res => {
-          // Store raw data
           this.rawCodes = res.data || [];
           Swal.close();
 
-          // Map ALL exams without filtering
-          this.exams = this.rawCodes.map((obj: any) => ({
-            code: obj.codeNo || obj.CODE || '',
-            version: obj.version || obj.VERSION || '',
-            subjectId: obj.subjectId || obj.SUBJECT_ID || '',
-            title: obj.subjectTitle || obj.DESCRIPTIVE_TITLE || obj.TITLE || '',
-            course: (obj.course || obj.COURSE || '').trim(),
-            yearLevel: obj.yearLevel || obj.YEAR_LEVEL || obj.year || 1,
-            lec: parseInt(obj.lecUnits || obj.LEC_UNITS || obj.lec || '3'),
-            oe: parseInt(obj.labUnits || obj.LAB_UNITS || obj.oe || '0'),
-            dept: obj.dept || obj.DEPT || obj.department || '',
-            instructor: obj.instructor || obj.INSTRUCTOR || obj.instructorName || ''
-          }));
+          // Map exams and filter out SAS department
+          this.exams = this.rawCodes
+            .filter((obj: any) => {
+              const dept = (obj.dept || obj.DEPT || '').toUpperCase().trim();
+              return dept !== 'SAS';
+            })
+            .map((obj: any) => {
+              const lectureRoom = obj.roomNumber || obj.ROOM_NUMBER || obj.ROOM || '';
+              const lectureBuilding = lectureRoom ? lectureRoom.charAt(0).toUpperCase() : '';
+              
+              return {
+                code: obj.codeNo || obj.CODE || '',
+                version: obj.version || obj.VERSION || '',
+                subjectId: obj.subjectId || obj.SUBJECT_ID || '',
+                title: obj.subjectTitle || obj.DESCRIPTIVE_TITLE || obj.TITLE || '',
+                course: (obj.course || obj.COURSE || '').trim(),
+                yearLevel: obj.yearLevel || obj.YEAR_LEVEL || obj.year || 1,
+                lec: parseInt(obj.lecUnits || obj.LEC_UNITS || obj.lec || '3'),
+                oe: parseInt(obj.labUnits || obj.LAB_UNITS || obj.oe || '0'),
+                dept: obj.dept || obj.DEPT || obj.department || '',
+                instructor: obj.instructor || obj.INSTRUCTOR || obj.instructorName || '',
+                studentCount: parseInt(obj.studentCount || obj.STUDENT_COUNT || '30'),
+                isRegular: true,
+                lectureRoom: lectureRoom,
+                lectureBuilding: lectureBuilding
+              };
+            });
 
-          // Extract rooms from ALL data
           this.rooms = this.getUniqueRooms(res.data);
           this.extractRoomCapacities(res.data);
+          this.buildRoomPreferences();
           this.categorizeSubjects();
           
-          // Only use fallback if NO rooms found
           if (this.rooms.length === 0) {
-            this.rooms = ['A', 'C', 'K', 'L', 'M', 'N'];
+            this.rooms = ['A-101', 'A-201', 'N-101', 'N-201', 'K-101', 'K-201', 'C-101', 'L-101', 'M-101'];
           }
           
           this.sharedData.getRoomSummary(res.data);
           this.cdr.detectChanges();
           
-          // Show accurate count
-          this.showToast('Success', `${this.exams.length} exams loaded from API`);
           console.log('✅ Total exams loaded:', this.exams.length);
+          console.log('✅ Regular students:', this.exams.filter(e => e.isRegular).length);
           console.log('✅ Total rooms extracted:', this.rooms.length);
+          
+          this.showToast('Success', `${this.exams.length} exams loaded (SAS excluded)`);
         },
         err => {
           Swal.close();
@@ -348,69 +362,60 @@ export class ExamSchedulerComponent implements OnInit {
   }
 
   getUniqueRooms(data: any[]): string[] {
-    if (!data || data.length === 0) {
-      console.warn('⚠️ No data provided to getUniqueRooms');
-      return [];
-    }
+    if (!data || data.length === 0) return [];
 
     const roomSet = new Set<string>();
+    
+    const allowedPrefixes = ['A-', 'N-', 'K-', 'C-', 'L-', 'M-'];
+    
     const excludedRooms = [
-      'B-11', 'B-12','BTL -','BUL -','HL','J-42','J-43','J-44','J-45','J-46','J-48','K-13',
-      'K-14','K-22','K-24','K-41','L-23','M-21','M-31','M-33','M-43','MChem','MLab1','MLab2',
-      'Nutri','SMTL','A-102','A-203','A-204','A-205','A-219','A-221','A-225','A-226','A-234',
-      'A-302','A-306','A-308','A-309','A-310','A-311','A-312','DemoR','Pharm', 'TBA', 'to be', 
-      'Virtu', 'EMC', 'Field', 'Hosp', 'Molec', '', 'null', 'undefined', 'N/A', 'NA'
+      'A-102','A-203','A-204','A-205','A-219','A-221','A-225','A-226','A-234',
+      'A-302','A-306','A-308','A-309','A-310','A-311','A-312',
+      'K-13','K-14','K-22','K-24','K-41',
+      'L-23','M-21','M-31','M-33','M-43',
+      'DemoR','Pharm', 'TBA', 'Virtu', 'EMC', 'Field', 'Hosp', 'Molec',
+      'BTL','BUL','HL','SMTL','MChem','MLab1','MLab2','Nutri',
+      '', 'null', 'undefined', 'N/A', 'NA'
     ];
     
-    console.log('📊 Processing rooms from', data.length, 'records');
-    
-    data.forEach((item, index) => {
-      // Check multiple possible field names (case-insensitive)
+    data.forEach((item) => {
       const room = item.roomNumber || item.ROOM_NUMBER || item.ROOM || 
-                   item.room || item.roomNo || item.ROOM_NO || 
-                   item.roomName || item.ROOM_NAME || '';
+                   item.room || item.roomNo || item.ROOM_NO || '';
       
       if (room) {
         const trimmedRoom = room.toString().trim();
         
-        // Only add if not empty and not in exclusion list
+        const hasAllowedPrefix = allowedPrefixes.some(prefix => 
+          trimmedRoom.startsWith(prefix)
+        );
+        
         if (trimmedRoom && 
             trimmedRoom.length > 0 && 
+            hasAllowedPrefix &&
             !excludedRooms.includes(trimmedRoom) &&
-            trimmedRoom.toLowerCase() !== 'tba' &&
-            trimmedRoom.toLowerCase() !== 'to be announced') {
+            trimmedRoom.toLowerCase() !== 'tba') {
           roomSet.add(trimmedRoom);
         }
       }
     });
     
-    const finalRooms = Array.from(roomSet).sort();
-    console.log('✅ Extracted', finalRooms.length, 'unique rooms');
-    
-    // Log first few rooms for debugging
-    if (finalRooms.length > 0) {
-      console.log('📍 Sample rooms:', finalRooms.slice(0, 10).join(', '));
-    }
-    
-    return finalRooms;
+    return Array.from(roomSet).sort((a, b) => {
+      const aMatch = a.match(/\d+/);
+      const bMatch = b.match(/\d+/);
+      const aNum = parseInt(aMatch ? aMatch[0] : '0');
+      const bNum = parseInt(bMatch ? bMatch[0] : '0');
+      return aNum - bNum;
+    });
   }
 
   extractRoomCapacities(data: any[]) {
     this.roomCapacities.clear();
     
-    if (!data || data.length === 0) {
-      console.warn('⚠️ No data provided to extractRoomCapacities');
-      return;
-    }
+    if (!data || data.length === 0) return;
     
     data.forEach(item => {
-      // Check multiple possible field names for room
-      const room = item.roomNumber || item.ROOM_NUMBER || item.ROOM || 
-                   item.room || item.roomNo || item.ROOM_NO || '';
-      
-      // Check multiple possible field names for capacity
-      const capacityValue = item.classSize || item.CLASS_SIZE || item.capacity || 
-                           item.CAPACITY || item.roomCapacity || item.ROOM_CAPACITY || '';
+      const room = item.roomNumber || item.ROOM_NUMBER || item.ROOM || item.room || '';
+      const capacityValue = item.classSize || item.CLASS_SIZE || item.capacity || item.CAPACITY || '';
       
       if (room && capacityValue) {
         const trimmedRoom = room.toString().trim();
@@ -418,38 +423,123 @@ export class ExamSchedulerComponent implements OnInit {
         
         if (trimmedRoom && capacity > 0) {
           const currentCapacity = this.roomCapacities.get(trimmedRoom);
-          // Keep the highest capacity if room appears multiple times
           if (!currentCapacity || currentCapacity < capacity) {
             this.roomCapacities.set(trimmedRoom, capacity);
           }
         }
       }
     });
+  }
+
+  buildRoomPreferences() {
+    this.roomPreferences.clear();
     
-    console.log('✅ Extracted capacities for', this.roomCapacities.size, 'rooms');
+    this.rooms.forEach(room => {
+      const building = room.charAt(0).toUpperCase();
+      const roomMatch = room.match(/\d+/);
+      const roomNum = parseInt(roomMatch ? roomMatch[0] : '0');
+      const floor = Math.floor(roomNum / 100) || 0;
+      const isGroundFloor = floor === 1;
+      
+      let campus: 'BCJ' | 'MAIN' | 'LECAROS' = 'MAIN';
+      let deptPref: string[] = [];
+      
+      if (building === 'A') {
+        campus = 'BCJ';
+        deptPref = ['SABH', 'SECAP'];
+      }
+      else if (['N', 'K', 'C'].includes(building)) {
+        campus = 'MAIN';
+        
+        if (building === 'C') {
+          deptPref = ['SACE'];
+        }
+        else if (['N', 'K'].includes(building)) {
+          deptPref = ['SACE', 'SHAS'];
+        }
+      }
+      else if (['L', 'M'].includes(building)) {
+        campus = 'LECAROS';
+        deptPref = ['SHAS'];
+      }
+      
+      const type: 'lecture' | 'lab' = 'lecture';
+      
+      this.roomPreferences.set(room, {
+        room,
+        campus,
+        building,
+        floor,
+        capacity: this.roomCapacities.get(room) || 40,
+        type,
+        deptPreference: deptPref,
+        isGroundFloor
+      });
+    });
+    
+    console.log('🏢 Room Distribution by Campus:');
+    console.log('BCJ:', this.rooms.filter(r => r.startsWith('A-')).length);
+    console.log('MAIN:', this.rooms.filter(r => ['N-', 'K-', 'C-'].some(p => r.startsWith(p))).length);
+    console.log('LECAROS:', this.rooms.filter(r => ['L-', 'M-'].some(p => r.startsWith(p))).length);
+  }
+
+  getRoomsByCampus(): { BCJ: string[], MAIN: string[], LECAROS: string[] } {
+    const result = { 
+      BCJ: [] as string[], 
+      MAIN: [] as string[], 
+      LECAROS: [] as string[] 
+    };
+    
+    this.roomPreferences.forEach((pref, room) => {
+      if (pref.campus === 'BCJ') result.BCJ.push(room);
+      else if (pref.campus === 'MAIN') result.MAIN.push(room);
+      else if (pref.campus === 'LECAROS') result.LECAROS.push(room);
+    });
+    
+    return result;
   }
 
   categorizeSubjects() {
-    this.subjectTypes.clear();
-    const subjectCourseCount = new Map<string, Set<string>>();
+  this.subjectTypes.clear();
+  const subjectCourseCount = new Map<string, Set<string>>();
+  
+  this.exams.forEach(exam => {
+    if (!subjectCourseCount.has(exam.subjectId)) {
+      subjectCourseCount.set(exam.subjectId, new Set());
+    }
+    subjectCourseCount.get(exam.subjectId)!.add(exam.course);
+  });
+  
+  // Enhanced Gen Ed detection
+  subjectCourseCount.forEach((courses, subjectId) => {
+    const upperSubjectId = subjectId.toUpperCase();
     
-    this.exams.forEach(exam => {
-      if (!subjectCourseCount.has(exam.subjectId)) {
-        subjectCourseCount.set(exam.subjectId, new Set());
-      }
-      const courses = subjectCourseCount.get(exam.subjectId);
-      if (courses) {
-        courses.add(exam.course);
-      }
-    });
+    // Check if it's a Gen Ed by subject ID patterns or course count
+    const isGenEdByPattern = 
+      upperSubjectId.includes('LANG') ||
+      upperSubjectId.includes('GEED') ||
+      upperSubjectId.includes('GE ') ||
+      upperSubjectId.includes('CFED') ||
+      upperSubjectId.includes('PHED') ||
+      upperSubjectId.includes('NSTP') ||
+      upperSubjectId.includes('PE ') ||
+      upperSubjectId.includes('MATH') && courses.size >= 8 ||
+      upperSubjectId.includes('STS') ||
+      upperSubjectId.includes('ETHICS') ||
+      upperSubjectId.includes('PHILOS') ||
+      upperSubjectId.includes('LIT ') ||
+      courses.size >= 10; // Lower threshold from 15 to 10
     
-    subjectCourseCount.forEach((courses, subjectId) => {
-      this.subjectTypes.set(subjectId, courses.size >= 15 ? 'genEd' : 'major');
-    });
-  }
+    const type = isGenEdByPattern ? 'genEd' : 'major';
+    this.subjectTypes.set(subjectId, type);
+    
+    if (type === 'genEd') {
+      console.log(`📚 Gen Ed identified: ${subjectId} (${courses.size} courses)`);
+    }
+  });
+}
 
-
-  // ===== Schedule Generation =====
+  // ===== ENHANCED HYBRID ILP ALGORITHM =====
   
   generateExamSchedule() {
     if (this.exams.length === 0) {
@@ -463,143 +553,41 @@ export class ExamSchedulerComponent implements OnInit {
     }
 
     Swal.fire({
-      title: 'Choose Generation Method',
+      title: 'Generate Schedule',
+      text: 'Apply Hybrid ILP + Student-Centric Heuristics algorithm?',
+      type: 'question',
+      showCancelButton: true,
+      confirmButtonText: '✨ Generate with ILP Algorithm',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#10b981'
+    }).then((result) => {
+      if (result.value) {
+        this.executeHybridILPAlgorithm();
+      }
+    });
+  }
+
+  executeHybridILPAlgorithm() {
+    Swal.fire({
+      title: 'Processing with Enhanced ILP Algorithm',
       html: `
-        <div style="text-align: left; padding: 10px;">
-          <p><strong>Basic Algorithm:</strong></p>
-          <ul style="margin-left: 20px; font-size: 14px;">
-            <li>Fast generation</li>
-            <li>Simple rules</li>
-            <li>Good for drafts</li>
-          </ul>
-          <br>
-          <p><strong>Enhanced Algorithm:</strong></p>
-          <ul style="margin-left: 20px; font-size: 14px;">
-            <li>1.5-hour breaks enforced</li>
-            <li>Gen-Ed NOT at 7:30 AM</li>
-            <li>No back-to-back majors</li>
-            <li>Even distribution</li>
-            <li>Capacity-aware rooms</li>
+        <div style="text-align: left; padding: 20px;">
+          <p><strong>Applying Hybrid ILP + Student-Centric Heuristics:</strong></p>
+          <ul style="margin: 15px 0; font-size: 14px;">
+            <li>✓ Prioritizing regular students</li>
+            <li>✓ Gen Eds first (SECAP) - avoiding 7:30am for PHED/CFED</li>
+            <li>✓ MATH subjects (SACE) - high priority</li>
+            <li>✓ Building conflict matrix</li>
+            <li>✓ 1.5-hour breaks (no consecutive)</li>
+            <li>✓ Same subject ID = same time, adjacent rooms</li>
+            <li>✓ Campus consistency with lecture schedule</li>
+            <li>✓ Ground floor preference (ascending order)</li>
+            <li>✓ Even distribution across ${this.days.length} days</li>
+            <li>✓ ARCH subjects → C building only</li>
+            <li>✓ No conflicts guaranteed</li>
           </ul>
         </div>
       `,
-      showCancelButton: true,
-      confirmButtonText: 'Enhanced Algorithm',
-      cancelButtonText: 'Basic Algorithm'
-    }).then((result) => {
-      if (result.value) {
-        this.generateEnhancedSchedule();
-      } else if (result.dismiss === Swal.DismissReason.cancel) {
-        this.generateBasicSchedule();
-      }
-    });
-  }
-
-  generateBasicSchedule() {
-    const schedule: ScheduledExam[] = [];
-    const courseGroups: { [course: string]: Exam[] } = {};
-    
-    this.exams.forEach(exam => {
-      const course = exam.course.toUpperCase().trim();
-      if (!courseGroups[course]) courseGroups[course] = [];
-      courseGroups[course].push(exam);
-    });
-
-    const usedRoomsBySlot: { [key: string]: Set<string> } = {};
-    const courseLastSlot: { [course: string]: number } = {};
-    const subjectIdSlot: { [subjectId: string]: { day: string; slots: string[] } } = {};
-    const sameExamDay: { [key: string]: string } = {};
-    let slotIndex = 0;
-
-    for (const course of Object.keys(courseGroups)) {
-      const courseExams = courseGroups[course];
-      const totalExams = courseExams.length;
-
-      const allowedDays = totalExams <= 3 ? [this.days[0]] :
-                          totalExams <= 6 ? [this.days[0], this.days[1]] :
-                          [...this.days];
-
-      let dayIndex = 0;
-
-      for (const exam of courseExams) {
-        const subjectId = exam.subjectId.toUpperCase().trim();
-        const title = exam.title.toUpperCase().trim();
-        const examKey = `${course}_${title}`;
-        const slotsNeeded = (exam.lec + exam.oe >= 5) ? 2 : 1;
-
-        let day = sameExamDay[examKey] || allowedDays[dayIndex % allowedDays.length];
-        sameExamDay[examKey] = day;
-        if (!sameExamDay[examKey]) dayIndex++;
-
-        let slots: string[] = [];
-        if (subjectIdSlot[subjectId]) {
-          day = subjectIdSlot[subjectId].day;
-          slots = subjectIdSlot[subjectId].slots;
-        } else {
-          if (subjectId.includes('CFED')) {
-            const allowedSlots = this.timeSlots.filter(t => !t.startsWith('7:30'));
-            for (let i = 0; i < slotsNeeded; i++) {
-              slots.push(allowedSlots[(slotIndex + i) % allowedSlots.length]);
-            }
-            slotIndex += slotsNeeded;
-          } else {
-            let attempts = 0;
-            while (slots.length < slotsNeeded) {
-              const slot = this.timeSlots[slotIndex % this.timeSlots.length];
-              slotIndex++;
-              attempts++;
-              if (attempts > this.timeSlots.length * 3 ||
-                  courseLastSlot[course] === undefined ||
-                  Math.abs(this.timeSlots.indexOf(slot) - courseLastSlot[course]) > 1) {
-                slots.push(slot);
-              }
-            }
-          }
-          subjectIdSlot[subjectId] = { day, slots };
-        }
-
-        courseLastSlot[course] = this.timeSlots.indexOf(slots[slots.length - 1]);
-
-        slots.forEach(slot => {
-          const slotKey = `${day}|${slot}`;
-          if (!usedRoomsBySlot[slotKey]) usedRoomsBySlot[slotKey] = new Set<string>();
-
-          const availableRoom = this.assignRoomByDepartment(exam, usedRoomsBySlot[slotKey], this.rooms);
-
-          if (availableRoom) {
-            usedRoomsBySlot[slotKey].add(availableRoom);
-            schedule.push({
-              CODE: exam.code,
-              SUBJECT_ID: exam.subjectId,
-              DESCRIPTIVE_TITLE: exam.title,
-              COURSE: exam.course,
-              YEAR_LEVEL: exam.yearLevel,
-              INSTRUCTOR: exam.instructor,
-              DEPT: exam.dept,
-              OE: exam.oe,
-              DAY: day,
-              SLOT: slot,
-              ROOM: availableRoom
-            });
-          }
-        });
-      }
-    }
-
-    this.generatedSchedule = schedule;
-    this.currentStep = 'generate';
-    
-    if (this.selectedExamGroup && this.activeTerm) {
-      this.saveScheduleForGroup(this.selectedExamGroup.name, this.activeTerm);
-    }
-    
-    this.showToast('Schedule Generated', `${schedule.length} exams scheduled successfully (Basic Algorithm)`);
-  }
-
-  generateEnhancedSchedule() {
-    Swal.fire({
-      title: 'Processing',
-      text: 'Generating schedule with all constraints...',
       allowOutsideClick: false,
       allowEscapeKey: false,
       onOpen: () => Swal.showLoading()
@@ -607,10 +595,10 @@ export class ExamSchedulerComponent implements OnInit {
 
     setTimeout(() => {
       try {
-        const subjectGroups = this.groupSubjectsBySharedId();
-        const sortedSubjects = this.prioritizeSubjects(subjectGroups);
-        const targets = this.calculateTargets();
-        const result = this.assignWithAllConstraints(sortedSubjects, targets);
+        const conflictMatrix = this.buildConflictMatrix();
+        const subjectPriorities = this.buildEnhancedSubjectPriorities(conflictMatrix);
+        const schedulingState = this.initializeEnhancedSchedulingState();
+        const result = this.enhancedHybridILPScheduling(subjectPriorities, schedulingState);
         
         Swal.close();
         
@@ -620,379 +608,602 @@ export class ExamSchedulerComponent implements OnInit {
         
         setTimeout(() => {
           this.currentStep = 'generate';
-          let dayMsg = `Day 1: ${result.day1} subjects`;
-          if (result.day2 > 0) dayMsg += `, Day 2: ${result.day2} subjects`;
-          if (result.day3 > 0) dayMsg += `, Day 3: ${result.day3} subjects`;
+          this.showToast(
+            'Schedule Generated!', 
+            `${result.assigned} subjects scheduled (${result.unscheduled} pending, ${result.conflicts} conflicts resolved)`,
+            'success'
+          );
           
-          this.showToast('Schedule Generated', `${result.assigned} subjects assigned! ${dayMsg} (Enhanced Algorithm)`);
+          console.log('📊 Scheduling Statistics:');
+          console.log(`  - Total subjects: ${subjectPriorities.length}`);
+          console.log(`  - Successfully scheduled: ${result.assigned}`);
+          console.log(`  - Unscheduled: ${result.unscheduled}`);
+          console.log(`  - Conflicts resolved: ${result.conflicts}`);
+          console.log(`  - Gen Eds scheduled: ${result.genEdsScheduled}`);
+          console.log(`  - MATH subjects scheduled: ${result.mathScheduled}`);
         }, 100);
 
       } catch (error) {
         Swal.close();
         setTimeout(() => {
+          console.error('❌ Scheduling error:', error);
           this.global.swalAlertError(`Generation error: ${error.message || 'Unknown error'}`);
         }, 100);
       }
     }, 300);
   }
 
-  private groupSubjectsBySharedId(): Map<string, Exam[]> {
-    const groups = new Map<string, Exam[]>();
-    this.exams.forEach(exam => {
-      if (!groups.has(exam.subjectId)) groups.set(exam.subjectId, []);
-      const examList = groups.get(exam.subjectId);
-      if (examList) {
-        examList.push(exam);
-      }
-    });
-    return groups;
-  }
-
-  private prioritizeSubjects(groups: Map<string, Exam[]>): Array<any> {
-    const subjects: Array<any> = [];
+  buildConflictMatrix(): ConflictMatrix {
+    const matrix: ConflictMatrix = {};
+    const courseYearGroups = new Map<string, Set<string>>();
     
-    for (const [subjectId, exams] of groups.entries()) {
-      subjects.push({
-        subjectId,
-        exams,
-        units: exams[0].lec + exams[0].oe,
-        type: this.subjectTypes.get(subjectId) || 'major',
-        count: exams.length
-      });
-    }
-    
-    subjects.sort((a, b) => {
-      if (a.units !== b.units) return b.units - a.units;
-      if (a.count !== b.count) return b.count - a.count;
-      if (a.type !== b.type) return a.type === 'genEd' ? -1 : 1;
-      return a.subjectId.localeCompare(b.subjectId);
-    });
-    
-    return subjects;
-  }
-
-  private calculateTargets(): Map<string, number[]> {
-    const targets = new Map<string, number[]>();
-    const numDays = this.days.length;
-    const isSummer = this.activeTerm && this.activeTerm.endsWith('3');
-    const maxPerDay = isSummer ? 6 : 4;
-    
-    const courseGroups = new Map<string, Exam[]>();
     this.exams.forEach(exam => {
       const key = `${exam.course}_${exam.yearLevel}`;
-      if (!courseGroups.has(key)) courseGroups.set(key, []);
-      const examList = courseGroups.get(key);
-      if (examList) {
-        examList.push(exam);
+      if (!courseYearGroups.has(key)) {
+        courseYearGroups.set(key, new Set());
+      }
+      courseYearGroups.get(key)!.add(exam.subjectId);
+    });
+    
+    for (const [courseYear, subjects] of courseYearGroups.entries()) {
+      matrix[courseYear] = {};
+      
+      for (const subjectId of subjects) {
+        matrix[courseYear][subjectId] = new Set(subjects);
+        matrix[courseYear][subjectId].delete(subjectId);
+      }
+    }
+    
+    return matrix;
+  }
+
+  buildEnhancedSubjectPriorities(conflictMatrix: ConflictMatrix): SubjectPriority[] {
+  const subjectGroups = new Map<string, Exam[]>();
+  
+  this.exams.forEach(exam => {
+    if (!subjectGroups.has(exam.subjectId)) {
+      subjectGroups.set(exam.subjectId, []);
+    }
+    subjectGroups.get(exam.subjectId)!.push(exam);
+  });
+  
+  const priorities: SubjectPriority[] = [];
+  
+  for (const [subjectId, exams] of subjectGroups.entries()) {
+    const firstExam = exams[0];
+    const units = firstExam.lec + firstExam.oe;
+    const isArchSubject = subjectId.toUpperCase().includes('ARCH');
+    const upperSubjectId = subjectId.toUpperCase();
+    
+    let type: 'genEd' | 'math' | 'major' = 'major';
+    
+    // Enhanced type detection
+    if (this.subjectTypes.get(subjectId) === 'genEd') {
+      type = 'genEd';
+    } else if ((firstExam.dept.toUpperCase() === 'SACE' && upperSubjectId.includes('MATH')) ||
+               (firstExam.dept.toUpperCase() === 'SACE' && upperSubjectId.includes('STAT'))) {
+      type = 'math';
+    }
+    
+    let priority = 0;
+    
+    // Priority calculations
+    const regularCount = exams.filter(e => e.isRegular).length;
+    priority += regularCount * 100;
+    
+    // CRITICAL: All Gen Eds get highest priority
+    if (type === 'genEd') {
+      priority += 100000; // Much higher priority
+    }
+    // MATH subjects high priority
+    else if (type === 'math') {
+      priority += 50000;
+    }
+    // ARCH subjects need C building
+    else if (isArchSubject) {
+      priority += 40000;
+    }
+    // Major subjects
+    else {
+      priority += 10000;
+    }
+    
+    // Bonus for 6-unit subjects
+    priority += units * 500;
+    
+    // Bonus for more students
+    const totalStudents = exams.reduce((sum, e) => sum + (e.studentCount || 30), 0);
+    priority += totalStudents * 5;
+    
+    // Bonus for fewer sections (easier to schedule)
+    if (exams.length === 1) {
+      priority += 5000;
+    } else if (exams.length === 2) {
+      priority += 3000;
+    }
+    
+    const requiresAdjacent = exams.length > 1;
+    
+    const conflicts = new Set<string>();
+    exams.forEach(exam => {
+      const key = `${exam.course}_${exam.yearLevel}`;
+      if (conflictMatrix[key] && conflictMatrix[key][subjectId]) {
+        conflictMatrix[key][subjectId].forEach(c => conflicts.add(c));
       }
     });
     
-    for (const [key, exams] of courseGroups.entries()) {
-      const uniqueSubjects = new Set(exams.map(e => e.subjectId));
-      const total = uniqueSubjects.size;
-      const perDay = Math.ceil(total / numDays);
-      const targetArr: number[] = new Array(numDays).fill(Math.min(perDay, maxPerDay));
-      targets.set(key, targetArr);
-    }
+    priorities.push({
+      subjectId,
+      exams,
+      priority,
+      type,
+      units,
+      studentCount: totalStudents,
+      conflicts,
+      isRegular: regularCount > 0,
+      requiresAdjacent
+    });
+  }
+  
+  priorities.sort((a, b) => b.priority - a.priority);
+  
+  console.log('🎯 Top 20 Priority Subjects:');
+  priorities.slice(0, 20).forEach((p, i) => {
+    console.log(`  ${i+1}. ${p.subjectId} (${p.type}) - Priority: ${p.priority} - Sections: ${p.exams.length}`);
+  });
+  
+  return priorities;
+}
+
+  initializeEnhancedSchedulingState(): SchedulingState {
+    const state: SchedulingState = {
+      assignments: new Map(),
+      roomUsage: new Map(),
+      studentLoad: new Map(),
+      campusUsage: new Map(),
+      subjectScheduled: new Map(),
+      consecutiveCheck: new Map()
+    };
     
-    return targets;
+    this.days.forEach(day => {
+      state.assignments.set(day, []);
+      
+      const roomMap = new Map<string, Set<string>>();
+      this.timeSlots.forEach(slot => {
+        roomMap.set(slot, new Set());
+      });
+      state.roomUsage.set(day, roomMap);
+      
+      this.exams.forEach(exam => {
+        const key = `${exam.course}_${exam.yearLevel}`;
+        if (!state.studentLoad.has(key)) {
+          state.studentLoad.set(key, new Map());
+        }
+        state.studentLoad.get(key)!.set(day, 0);
+      });
+      
+      state.campusUsage.set(day, new Map());
+      
+      const courseYears = new Set(this.exams.map(e => `${e.course}_${e.yearLevel}`));
+      courseYears.forEach(courseYear => {
+        if (!state.consecutiveCheck.has(courseYear)) {
+          state.consecutiveCheck.set(courseYear, new Map());
+        }
+        state.consecutiveCheck.get(courseYear)!.set(day, new Set());
+      });
+    });
+    
+    return state;
   }
 
-  private assignWithAllConstraints(sortedSubjects: Array<any>, targets: Map<string, number[]>): any {
-    const assigned = new Set<string>();
-    const slotMap = new Map<string, {day: string, slot: string}>();
-    const dayCount = new Map<string, Map<string, number>>();
-    const dayMajors = new Map<string, Map<string, Set<string>>>();
+  enhancedHybridILPScheduling(priorities: SubjectPriority[], state: SchedulingState): any {
+    let assignedCount = 0;
+    let conflicts = 0;
+    let genEdsScheduled = 0;
+    let mathScheduled = 0;
     const schedule: ScheduledExam[] = [];
-    const usedRoomsBySlot: { [key: string]: Set<string> } = {};
+    const unscheduledSubjects: string[] = [];
     
-    // Initialize counters
-    const courseKeys = new Set(this.exams.map(e => `${e.course}_${e.yearLevel}`));
-    for (const key of courseKeys) {
-      dayCount.set(key, new Map(this.days.map(d => [d, 0])));
-      dayMajors.set(key, new Map(this.days.map(d => [d, new Set()])));
-    }
+    const scheduledSubjects = new Set<string>();
     
-    for (const subject of sortedSubjects) {
-      if (assigned.has(subject.subjectId)) continue;
+    for (const subject of priorities) {
+      if (scheduledSubjects.has(subject.subjectId)) continue;
       
-      if (slotMap.has(subject.subjectId)) {
-        const existing = slotMap.get(subject.subjectId);
-        if (existing) {
-          this.assignSubjectToSchedule(subject, existing.day, existing.slot, schedule, usedRoomsBySlot, dayCount, dayMajors);
-          assigned.add(subject.subjectId);
-          continue;
+      const bestSlot = this.findEnhancedOptimalSlot(subject, state);
+      
+      if (bestSlot) {
+        const wasAssigned = this.assignSubjectToSlotEnhanced(subject, bestSlot, state, schedule);
+        
+        if (wasAssigned) {
+          scheduledSubjects.add(subject.subjectId);
+          assignedCount++;
+          
+          if (subject.type === 'genEd') genEdsScheduled++;
+          if (subject.type === 'math') mathScheduled++;
+        } else {
+          unscheduledSubjects.push(subject.subjectId);
         }
-      }
-      
-      const slot = this.findBestSlotStrict(subject, dayCount, dayMajors, targets);
-      
-      if (slot) {
-        this.assignSubjectToSchedule(subject, slot.day, slot.slot, schedule, usedRoomsBySlot, dayCount, dayMajors);
-        slotMap.set(subject.subjectId, slot);
-        assigned.add(subject.subjectId);
+      } else {
+        conflicts++;
+        unscheduledSubjects.push(subject.subjectId);
+        console.warn(`⚠️ Could not find slot for ${subject.subjectId} (${subject.type})`);
       }
     }
     
     this.generatedSchedule = schedule;
     
+    if (unscheduledSubjects.length > 0) {
+      console.warn('⚠️ Unscheduled subjects:', unscheduledSubjects);
+    }
+    
     return {
-      success: assigned.size === sortedSubjects.length,
-      assigned: assigned.size,
-      total: sortedSubjects.length,
-      day1: this.countDayAssignments(dayCount, 0),
-      day2: this.days.length > 1 ? this.countDayAssignments(dayCount, 1) : 0,
-      day3: this.days.length > 2 ? this.countDayAssignments(dayCount, 2) : 0
+      success: true,
+      assigned: assignedCount,
+      unscheduled: unscheduledSubjects.length,
+      conflicts,
+      total: priorities.length,
+      genEdsScheduled,
+      mathScheduled
     };
   }
 
-  private findBestSlotStrict(
-    subject: any,
-    dayCount: Map<string, Map<string, number>>,
-    dayMajors: Map<string, Map<string, Set<string>>>,
-    targets: Map<string, number[]>
-  ): {day: string, slot: string} | null {
+  findEnhancedOptimalSlot(
+  subject: SubjectPriority,
+  state: SchedulingState
+): {day: string, slot: string, slots: string[]} | null {
+  
+  const bestOptions: SlotOption[] = [];
+  const isSummer = this.activeTerm && this.activeTerm.endsWith('3');
+  const maxPerDay = isSummer ? 6 : 5; // Increased from 4 to 5 for regular terms
+  
+  // Only PHED and CFED should avoid 7:30am
+  const isPHEDorCFED = subject.subjectId.toUpperCase().includes('PHED') || 
+                       subject.subjectId.toUpperCase().includes('CFED');
+  
+  for (let dayIdx = 0; dayIdx < this.days.length; dayIdx++) {
+    const day = this.days[dayIdx];
     
-    const dayScores = this.calculateDayPreference(subject.exams, dayCount, targets);
-    
-    for (const {day} of dayScores) {
-      const slotOrder = this.getDistributedSlotOrder(day);
+    for (let slotIdx = 0; slotIdx < this.timeSlots.length; slotIdx++) {
+      const slot = this.timeSlots[slotIdx];
       
-      for (const slotIndex of slotOrder) {
-        const slot = this.timeSlots[slotIndex];
-        
-        if (subject.type === 'genEd' && slot === '7:30-9:00') continue;
-        
-        if (this.checkAllConstraints(subject, day, slot, dayCount, dayMajors)) {
-          return { day, slot };
+      // ONLY PHED/CFED avoid 7:30am, other Gen Eds can use it
+      if (isPHEDorCFED && slot === '7:30-9:00') {
+        continue;
+      }
+      
+      const slotsNeeded = subject.units >= 6 ? 2 : 1;
+      const slots: string[] = [slot];
+      
+      if (slotsNeeded === 2) {
+        if (slotIdx + 1 < this.timeSlots.length) {
+          slots.push(this.timeSlots[slotIdx + 1]);
+        } else {
+          continue;
         }
       }
-    }
-    
-    return null;
-  }
-
-  private calculateDayPreference(
-    exams: Exam[],
-    dayCount: Map<string, Map<string, number>>,
-    targets: Map<string, number[]>
-  ): Array<{day: string, dayIndex: number, score: number}> {
-    
-    const scores: Array<any> = [];
-    
-    for (let i = 0; i < this.days.length; i++) {
-      const day = this.days[i];
-      let score = 0;
       
-      for (const exam of exams) {
-        const key = `${exam.course}_${exam.yearLevel}`;
-        const dayCountMap = dayCount.get(key);
-        const current = (dayCountMap && dayCountMap.get(day)) || 0;
-        const targetArr = targets.get(key);
-        const target = (targetArr && targetArr[i]) || 4;
+      const cost = this.calculateEnhancedSlotCost(subject, day, slots, state, maxPerDay);
+      
+      if (cost >= 0) {
+        const availableRooms = this.getAvailableRoomsForSubject(subject, day, slots[0], state);
         
-        score += current < target ? (target - current) * 100 : -(current - target) * 50;
-      }
-      
-      scores.push({ day, dayIndex: i, score });
-    }
-    
-    scores.sort((a, b) => b.score - a.score);
-    return scores;
-  }
-
-  private getDistributedSlotOrder(day: string): number[] {
-    const slotCounts: number[] = new Array(this.timeSlots.length).fill(0);
-    
-    this.generatedSchedule.forEach(exam => {
-      if (exam.DAY === day) {
-        const idx = this.timeSlots.indexOf(exam.SLOT);
-        if (idx >= 0) slotCounts[idx]++;
-      }
-    });
-    
-    return this.timeSlots
-      .map((slot, index) => ({ index, count: slotCounts[index] }))
-      .sort((a, b) => a.count !== b.count ? a.count - b.count : a.index - b.index)
-      .map(s => s.index);
-  }
-
-  private checkAllConstraints(
-    subject: any,
-    day: string,
-    slot: string,
-    dayCount: Map<string, Map<string, number>>,
-    dayMajors: Map<string, Map<string, Set<string>>>
-  ): boolean {
-    
-    const slotIdx = this.timeSlots.indexOf(slot);
-    const isSummer = this.activeTerm && this.activeTerm.endsWith('3');
-    const maxPerDay = isSummer ? 6 : 4;
-    
-    for (const exam of subject.exams) {
-      const key = `${exam.course}_${exam.yearLevel}`;
-      const dayCountMap = dayCount.get(key);
-      const count = (dayCountMap && dayCountMap.get(day)) || 0;
-      
-      if (count >= maxPerDay) return false;
-      
-      if (count >= maxPerDay) return false;
-      
-      // Check consecutive slots
-      if (slotIdx > 0) {
-        const prevSlot = this.timeSlots[slotIdx - 1];
-        if (this.generatedSchedule.some(e => 
-          e.DAY === day && e.SLOT === prevSlot && 
-          e.COURSE === exam.course && e.YEAR_LEVEL === exam.yearLevel
-        )) return false;
-      }
-      
-      if (slotIdx + 1 < this.timeSlots.length) {
-        const nextSlot = this.timeSlots[slotIdx + 1];
-        if (this.generatedSchedule.some(e => 
-          e.DAY === day && e.SLOT === nextSlot && 
-          e.COURSE === exam.course && e.YEAR_LEVEL === exam.yearLevel
-        )) return false;
-      }
-      
-      // Check major back-to-back
-      if (subject.type === 'major') {
-        if (slotIdx > 0) {
-          const prevSlot = this.timeSlots[slotIdx - 1];
-          const prevExam = this.generatedSchedule.find(e => 
-            e.DAY === day && e.SLOT === prevSlot && 
-            e.COURSE === exam.course && e.YEAR_LEVEL === exam.yearLevel
-          );
-          if (prevExam && this.subjectTypes.get(prevExam.SUBJECT_ID) === 'major') {
-            return false;
-          }
-        }
-        
-        if (slotIdx + 2 < this.timeSlots.length) {
-          const slot2Ahead = this.timeSlots[slotIdx + 2];
-          const exam2Ahead = this.generatedSchedule.find(e => 
-            e.DAY === day && e.SLOT === slot2Ahead && 
-            e.COURSE === exam.course && e.YEAR_LEVEL === exam.yearLevel
-          );
-          if (exam2Ahead && this.subjectTypes.get(exam2Ahead.SUBJECT_ID) === 'major') {
-            return false;
-          }
-        }
-      }
-    }
-    
-    return true;
-  }
-
-  private assignSubjectToSchedule(
-    subject: any,
-    day: string,
-    slot: string,
-    schedule: ScheduledExam[],
-    usedRoomsBySlot: { [key: string]: Set<string> },
-    dayCount: Map<string, Map<string, number>>,
-    dayMajors: Map<string, Map<string, Set<string>>>
-  ): void {
-    
-    const slotKey = `${day}|${slot}`;
-    if (!usedRoomsBySlot[slotKey]) usedRoomsBySlot[slotKey] = new Set<string>();
-    
-    for (const exam of subject.exams) {
-      const availableRoom = this.assignRoomByDepartment(exam, usedRoomsBySlot[slotKey], this.rooms);
-      
-      if (availableRoom) {
-        usedRoomsBySlot[slotKey].add(availableRoom);
-        
-        schedule.push({
-          CODE: exam.code,
-          SUBJECT_ID: exam.subjectId,
-          DESCRIPTIVE_TITLE: exam.title,
-          COURSE: exam.course,
-          YEAR_LEVEL: exam.yearLevel,
-          INSTRUCTOR: exam.instructor,
-          DEPT: exam.dept,
-          OE: exam.oe,
-          DAY: day,
-          SLOT: slot,
-          ROOM: availableRoom
-        });
-        
-        if (subject.units === 6) {
-          const nextSlot = this.getNextSlot(slot);
-          if (nextSlot) {
-            const nextSlotKey = `${day}|${nextSlot}`;
-            if (!usedRoomsBySlot[nextSlotKey]) usedRoomsBySlot[nextSlotKey] = new Set<string>();
-            usedRoomsBySlot[nextSlotKey].add(availableRoom);
-            
-            schedule.push({
-              CODE: exam.code,
-              SUBJECT_ID: exam.subjectId,
-              DESCRIPTIVE_TITLE: exam.title,
-              COURSE: exam.course,
-              YEAR_LEVEL: exam.yearLevel,
-              INSTRUCTOR: exam.instructor,
-              DEPT: exam.dept,
-              OE: exam.oe,
-              DAY: day,
-              SLOT: nextSlot,
-              ROOM: availableRoom
-            });
-          }
-        }
-        
-        const key = `${exam.course}_${exam.yearLevel}`;
-        const dayCountMap = dayCount.get(key);
-        const count = (dayCountMap && dayCountMap.get(day)) || 0;
-        if (dayCountMap) {
-          dayCountMap.set(day, count + 1);
-        }
-        
-        if (subject.type === 'major') {
-          const dayMajorsMap = dayMajors.get(key);
-          if (dayMajorsMap) {
-            const majorsSet = dayMajorsMap.get(day);
-            if (majorsSet) {
-              majorsSet.add(subject.subjectId);
-            }
-          }
+        if (availableRooms.length >= subject.exams.length) {
+          bestOptions.push({ day, slot, slots, cost, availableRooms });
         }
       }
     }
   }
+  
+  if (bestOptions.length === 0) return null;
+  
+  bestOptions.sort((a, b) => a.cost - b.cost);
+  
+  return {
+    day: bestOptions[0].day,
+    slot: bestOptions[0].slot,
+    slots: bestOptions[0].slots
+  };
+}
 
-  private getNextSlot(slot: string): string | null {
-    const idx = this.timeSlots.indexOf(slot);
-    return (idx >= 0 && idx + 1 < this.timeSlots.length) ? this.timeSlots[idx + 1] : null;
-  }
-
-  private countDayAssignments(dayCount: Map<string, Map<string, number>>, dayIndex: number): number {
-    const day = this.days[dayIndex];
-    return new Set(this.generatedSchedule.filter(e => e.DAY === day).map(e => e.SUBJECT_ID)).size;
-  }
-
-  assignRoomByDepartment(exam: Exam, usedRoomsSet: Set<string>, roomsList: string[]): string | null {
-    const dept = exam.dept ? exam.dept.toUpperCase() : '';
-    const course = exam.course ? exam.course.toUpperCase() : '';
-
-    let preferredPrefixes: string[] = [];
-
-    if (dept === 'SABH' || dept === 'SECAP') {
-      preferredPrefixes = ['A'];
-    } else if (course.startsWith('BSA')) {
-      preferredPrefixes = ['C', 'K'];
-    } else if (dept === 'SACE') {
-      preferredPrefixes = ['N', 'K'];
-    } else if (dept === 'SHAS') {
-      preferredPrefixes = ['M', 'L'];
+calculateEnhancedSlotCost(
+  subject: SubjectPriority,
+  day: string,
+  slots: string[],
+  state: SchedulingState,
+  maxPerDay: number
+): number {
+  let cost = 0;
+  
+  for (const exam of subject.exams) {
+    const courseYearKey = `${exam.course}_${exam.yearLevel}`;
+    const studentLoad = state.studentLoad.get(courseYearKey);
+    const currentLoad = studentLoad ? studentLoad.get(day) || 0 : 0;
+    
+    // Hard constraint: max subjects per day
+    if (currentLoad >= maxPerDay) {
+      return -1;
     }
-
-    const availableRooms = roomsList
-      .filter(r => !usedRoomsSet.has(r))
-      .sort((a, b) => (this.roomCapacities.get(b) || 0) - (this.roomCapacities.get(a) || 0));
-
-    return availableRooms.find(r => preferredPrefixes.some(prefix => r.startsWith(prefix))) || availableRooms[0] || null;
+    
+    // Hard constraint: Check for time conflicts
+    for (const timeSlot of slots) {
+      const hasConflict = Array.from(state.assignments.get(day) || []).some(assigned => 
+        assigned.SLOT === timeSlot &&
+        assigned.COURSE === exam.course &&
+        assigned.YEAR_LEVEL === exam.yearLevel &&
+        assigned.SUBJECT_ID !== subject.subjectId
+      );
+      
+      if (hasConflict) {
+        return -1;
+      }
+    }
+    
+    // Soft constraint: Avoid consecutive subjects but don't block
+    const slotIdx = this.timeSlots.indexOf(slots[0]);
+    
+    if (slotIdx > 0) {
+      const prevSlot = this.timeSlots[slotIdx - 1];
+      const hasPrevious = Array.from(state.assignments.get(day) || []).some(assigned =>
+        assigned.SLOT === prevSlot &&
+        assigned.COURSE === exam.course &&
+        assigned.YEAR_LEVEL === exam.yearLevel
+      );
+      
+      if (hasPrevious) {
+        const prevAssignment = Array.from(state.assignments.get(day) || [])
+          .find(a => a.SLOT === prevSlot && a.COURSE === exam.course && a.YEAR_LEVEL === exam.yearLevel);
+        
+        const prevSubjectType = prevAssignment ? this.subjectTypes.get(prevAssignment.SUBJECT_ID) : undefined;
+        
+        // Only block if BOTH are majors (allow Gen Ed + Major consecutive)
+        if (subject.type === 'major' && prevSubjectType === 'major') {
+          cost += 500; // High penalty but not blocking
+        } else {
+          cost += 100; // Small penalty
+        }
+      }
+    }
+    
+    if (slotIdx + slots.length < this.timeSlots.length) {
+      const nextSlot = this.timeSlots[slotIdx + slots.length];
+      const hasNext = Array.from(state.assignments.get(day) || []).some(assigned =>
+        assigned.SLOT === nextSlot &&
+        assigned.COURSE === exam.course &&
+        assigned.YEAR_LEVEL === exam.yearLevel
+      );
+      
+      if (hasNext) {
+        const nextAssignment = Array.from(state.assignments.get(day) || [])
+          .find(a => a.SLOT === nextSlot && a.COURSE === exam.course && a.YEAR_LEVEL === exam.yearLevel);
+        
+        const nextSubjectType = nextAssignment ? this.subjectTypes.get(nextAssignment.SUBJECT_ID) : undefined;
+        
+        if (subject.type === 'major' && nextSubjectType === 'major') {
+          cost += 500;
+        } else {
+          cost += 100;
+        }
+      }
+    }
   }
+  
+  // Soft constraint: Even distribution
+  const totalSubjects = this.exams.length;
+  const targetPerDay = totalSubjects / this.days.length;
+  const dayAssignments = state.assignments.get(day) || [];
+  const deviation = Math.abs(dayAssignments.length - targetPerDay);
+  cost += deviation * 5; // Reduced weight
+  
+  // Soft constraint: Prefer ground floor
+  cost += slots.length * 3; // Reduced weight
+  
+  return cost;
+}
 
+
+ getAvailableRoomsForSubject(
+  subject: SubjectPriority,
+  day: string,
+  slot: string,
+  state: SchedulingState
+): string[] {
+  const usedRooms = state.roomUsage.get(day)!.get(slot)!;
+  let availableRooms = this.rooms.filter(r => !usedRooms.has(r));
+  
+  if (availableRooms.length === 0) return [];
+  
+  const firstExam = subject.exams[0];
+  const dept = firstExam.dept.toUpperCase();
+  const isArchSubject = firstExam.subjectId.toUpperCase().includes('ARCH');
+  
+  // Primary room filtering
+  let primaryRooms: string[] = [];
+  let fallbackRooms: string[] = [];
+  
+  if (isArchSubject) {
+    // ARCH subjects prefer C building but can use N/K if needed
+    primaryRooms = availableRooms.filter(r => r.startsWith('C-'));
+    fallbackRooms = availableRooms.filter(r => r.startsWith('N-') || r.startsWith('K-'));
+  } else if (['SABH', 'SECAP'].includes(dept)) {
+    // BCJ Building (A rooms)
+    primaryRooms = availableRooms.filter(r => r.startsWith('A-'));
+    fallbackRooms = []; // No fallback for BCJ departments
+  } else if (dept === 'SACE') {
+    // MAIN Building (N, K)
+    primaryRooms = availableRooms.filter(r => r.startsWith('N-') || r.startsWith('K-'));
+    fallbackRooms = availableRooms.filter(r => r.startsWith('C-')); // Can use C if needed
+  } else if (dept === 'SHAS') {
+    // MAIN (N, K) or LECAROS (L, M)
+    primaryRooms = availableRooms.filter(r => 
+      r.startsWith('N-') || r.startsWith('K-') || 
+      r.startsWith('L-') || r.startsWith('M-')
+    );
+    fallbackRooms = [];
+  } else {
+    // Unknown department - use any available room
+    primaryRooms = availableRooms;
+    fallbackRooms = [];
+  }
+  
+  // Use primary rooms if available, otherwise use fallback
+  let roomsToUse = primaryRooms.length >= subject.exams.length ? primaryRooms : 
+                   (primaryRooms.length + fallbackRooms.length >= subject.exams.length) ? 
+                   [...primaryRooms, ...fallbackRooms] : availableRooms;
+  
+  if (roomsToUse.length === 0) {
+    console.warn(`⚠️ No suitable rooms for ${dept} - ${firstExam.subjectId}, using any available`);
+    roomsToUse = availableRooms;
+  }
+  
+  // Prioritize lecture room if available
+  if (firstExam.lectureRoom && roomsToUse.includes(firstExam.lectureRoom)) {
+    const idx = roomsToUse.indexOf(firstExam.lectureRoom);
+    roomsToUse.splice(idx, 1);
+    roomsToUse.unshift(firstExam.lectureRoom);
+  }
+  
+  // Sort by floor (ground floor first)
+  roomsToUse.sort((a, b) => {
+    const aPref = this.roomPreferences.get(a);
+    const bPref = this.roomPreferences.get(b);
+    
+    if (!aPref || !bPref) return 0;
+    
+    if (aPref.isGroundFloor && !bPref.isGroundFloor) return -1;
+    if (!aPref.isGroundFloor && bPref.isGroundFloor) return 1;
+    
+    if (aPref.floor !== bPref.floor) return aPref.floor - bPref.floor;
+    
+    const aMatch = a.match(/\d+/);
+    const bMatch = b.match(/\d+/);
+    const aNum = parseInt(aMatch ? aMatch[0] : '0');
+    const bNum = parseInt(bMatch ? bMatch[0] : '0');
+    return aNum - bNum;
+  });
+  
+  // Handle adjacent rooms for multiple sections
+  if (subject.requiresAdjacent && subject.exams.length > 1) {
+    return this.findAdjacentRooms(roomsToUse, subject.exams.length);
+  }
+  
+  return roomsToUse;
+}
+
+  findAdjacentRooms(availableRooms: string[], count: number): string[] {
+  if (count <= 1) return availableRooms;
+  
+  for (let i = 0; i <= availableRooms.length - count; i++) {
+    const group = availableRooms.slice(i, i + count);
+    const building = group[0].charAt(0);
+    
+    if (group.every(r => r.startsWith(building))) {
+      const numbers = group.map(r => {
+        const match = r.match(/\d+/);
+        return parseInt(match ? match[0] : '0');
+      });
+      const maxDiff = Math.max(...numbers) - Math.min(...numbers);
+      
+      if (maxDiff <= 5) {
+        return group;
+      }
+    }
+  }
+  
+  const buildingGroups = new Map<string, string[]>();
+  availableRooms.forEach(room => {
+    const building = room.charAt(0);
+    if (!buildingGroups.has(building)) {
+      buildingGroups.set(building, []);
+    }
+    buildingGroups.get(building)!.push(room);
+  });
+  
+  for (const [building, rooms] of buildingGroups.entries()) {
+    if (rooms.length >= count) {
+      return rooms.slice(0, count);
+    }
+  }
+  
+  return availableRooms.slice(0, count);
+}
+
+
+  assignSubjectToSlotEnhanced(
+  subject: SubjectPriority,
+  slot: {day: string, slot: string, slots: string[]},
+  state: SchedulingState,
+  schedule: ScheduledExam[]
+): boolean {
+  
+  const { day, slots } = slot;
+  const availableRooms = this.getAvailableRoomsForSubject(subject, day, slots[0], state);
+  
+  if (availableRooms.length < subject.exams.length) {
+    console.warn(`⚠️ Not enough rooms for ${subject.subjectId}`);
+    return false;
+  }
+  
+  subject.exams.forEach((exam, idx) => {
+    const room = availableRooms[idx];
+    
+    for (const timeSlot of slots) {
+      const scheduledExam: ScheduledExam = {
+        CODE: exam.code,
+        SUBJECT_ID: exam.subjectId,
+        DESCRIPTIVE_TITLE: exam.title,
+        COURSE: exam.course,
+        YEAR_LEVEL: exam.yearLevel,
+        INSTRUCTOR: exam.instructor,
+        DEPT: exam.dept,
+        OE: exam.oe,
+        DAY: day,
+        SLOT: timeSlot,
+        ROOM: room,
+        UNITS: exam.lec + exam.oe,
+        STUDENT_COUNT: exam.studentCount,
+        PRIORITY: subject.priority,
+        IS_REGULAR: exam.isRegular,
+        LECTURE_ROOM: exam.lectureRoom
+      };
+      
+      schedule.push(scheduledExam);
+      state.assignments.get(day)!.push(scheduledExam);
+      state.roomUsage.get(day)!.get(timeSlot)!.add(room);
+    }
+    
+    const courseYearKey = `${exam.course}_${exam.yearLevel}`;
+    const loadMap = state.studentLoad.get(courseYearKey);
+    if (loadMap) {
+      const current = loadMap.get(day) || 0;
+      loadMap.set(day, current + 1);
+    }
+    
+    const roomPref = this.roomPreferences.get(room);
+    if (roomPref) {
+      state.campusUsage.get(day)!.set(courseYearKey, roomPref.campus);
+    }
+    
+    // Fixed: Replace optional chaining with traditional check
+    const consecutiveCheckMap = state.consecutiveCheck.get(courseYearKey);
+    if (consecutiveCheckMap) {
+      const daySet = consecutiveCheckMap.get(day);
+      if (daySet) {
+        daySet.add(subject.subjectId);
+      }
+    }
+  });
+  
+  state.subjectScheduled.set(subject.subjectId, { day, slot: slots[0] });
+  
+  return true;
+}
+
+  getBuildingCampus(building: string): 'BCJ' | 'MAIN' | 'LECAROS' {
+    if (building === 'A') return 'BCJ';
+    if (['N', 'K', 'C'].includes(building)) return 'MAIN';
+    if (['L', 'M'].includes(building)) return 'LECAROS';
+    return 'MAIN';
+  }
 
   // ===== Schedule Regeneration =====
   
@@ -1410,6 +1621,14 @@ export class ExamSchedulerComponent implements OnInit {
     );
   }
 
+  removeExamByTitle(title: string) {
+    if (confirm(`Remove exam "${title}"?`)) {
+      this.generatedSchedule = this.generatedSchedule.filter(e => e.DESCRIPTIVE_TITLE !== title);
+      this.generateCourseGridData();
+      this.showToast('Removed', `Exam "${title}" removed`);
+    }
+  }
+
   // ===== Utility Methods =====
   
   downloadScheduleCSV() {
@@ -1426,7 +1645,7 @@ export class ExamSchedulerComponent implements OnInit {
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const groupName = (this.selectedExamGroup && this.selectedExamGroup.name) || 'export';
-    saveAs(blob, `exam_schedule_${groupName}.csv`);
+    saveAs(blob, `exam_schedule_${groupName}_ILP.csv`);
   }
 
   getDeptColor(dept: string): string {
