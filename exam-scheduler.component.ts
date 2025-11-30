@@ -8,6 +8,7 @@ import { MatDialog } from '@angular/material';
 import Swal from 'sweetalert2';
 import { SharedDataService } from '../shared-data.service';
 import { DatePickerComponent } from '../date-picker/date-picker.component';
+import { generateExamSchedule as algorithmGenerateSchedule } from './exam-scheduler-algorithm';
 import { 
   Exam, 
   ScheduledExam, 
@@ -29,7 +30,7 @@ import {
 })
 export class ExamSchedulerComponent implements OnInit {
   // State management
-  currentStep: 'import' | 'generate' | 'summary' | 'timetable' | 'coursegrid' = 'import';
+  currentStep: 'import' | 'generate' | 'summary' | 'timetable' | 'coursegrid' | 'simpleschedule' | 'roomgrid' = 'import';
   isLoadingApi: boolean = false;
   
   // Core data
@@ -48,9 +49,9 @@ export class ExamSchedulerComponent implements OnInit {
   
   // Time slots (1.5 hour intervals)
   timeSlots: string[] = [
-    '7:30-9:00', '9:00-10:30', '10:30-12:00', '12:00-1:30',
-    '1:30-3:00', '3:00-4:30', '4:30-6:00', '6:00-7:30'
-  ];
+  '7:30-9:00', '9:00-10:30', '10:30-12:00', '12:00-13:30',
+  '13:30-15:00', '15:00-16:30', '16:30-18:00', '18:00-19:30'
+];
   
   // Term selection
   activeTerm: string = '';
@@ -79,6 +80,11 @@ export class ExamSchedulerComponent implements OnInit {
   roomTimeData: any = { table: {}, rooms: [], days: [] };
   courseGridData: any = { grid: {}, courses: [], days: [] };
 
+  selectedCourse: string = 'ALL';
+  selectedYearLevel: string = 'ALL';
+  selectedDepartment: string = 'ALL'; 
+  selectedDay: string = 'ALL';
+
   constructor(
     public api: ApiService,
     public global: GlobalService,
@@ -89,30 +95,90 @@ export class ExamSchedulerComponent implements OnInit {
   ) {}
 
   ngOnInit() {
-    this.activeDay = this.days[0];
-    this.roomTimeData.days = [...this.days];
-    this.courseGridData.days = [...this.days];
-    this.combineYearTerm();
-    
-    this.sharedData.clearSelectedExamGroup();
-    this.sharedData.clearExamDates();
-    this.sharedData.clearActiveTerm();
-    this.selectedExamGroup = null;
-    
-    this.loadSavedExamGroups();
-    
-    this.sharedData.selectedExamGroup$.subscribe(group => {
-      if (group) {
-        this.selectedExamGroup = group;
-        this.examDates = group.days.map(d => 
-          d.date ? new Date(d.date).toLocaleDateString('en-CA') : ''
-        );
-        this.activeTerm = group.termYear || '';
-      }
-    });
+  // ✅ Ensure we start on the import step
+  this.currentStep = 'import';
+  
+  this.activeDay = this.days[0];
+  this.roomTimeData.days = [...this.days];
+  this.courseGridData.days = [...this.days];
+  this.combineYearTerm();
+  
+  this.sharedData.clearSelectedExamGroup();
+  this.sharedData.clearExamDates();
+  this.sharedData.clearActiveTerm();
+  this.selectedExamGroup = null;
+  
+  this.loadSavedExamGroups();
+  
+  this.sharedData.selectedExamGroup$.subscribe(group => {
+    if (group) {
+      this.selectedExamGroup = group;
+      this.examDates = group.days.map(d => 
+        d.date ? new Date(d.date).toLocaleDateString('en-CA') : ''
+      );
+      this.activeTerm = group.termYear || '';
+    }
+  });
+  
+  // ✅ Force initial render
+  this.cdr.detectChanges();
+}
+
+  // ===================================================================
+  // HELPER METHODS (Required by new algorithm)
+  // ===================================================================
+
+  isGenEdSubject(subjectId: string): boolean {
+    const upperSubject = subjectId.toUpperCase();
+    const genEdPrefixes = ['CFED', 'PHED', 'ENGL', 'CONW', 'LANG', 'JAPN', 'CHIN', 'SPAN', 'LITR', 'ETHC', 'RESM'];
+    return genEdPrefixes.some(prefix => upperSubject.startsWith(prefix));
   }
 
-  // ===== Initialization Methods =====
+  isMathSubject(exam: Exam): boolean {
+    return exam.subjectId.toUpperCase().startsWith('MATH') && exam.dept === 'SACE';
+  }
+
+  isArchSubject(subjectId: string): boolean {
+    return subjectId.toUpperCase().includes('ARCH');
+  }
+
+  extractBuilding(room: string): string {
+    if (!room) return '';
+    const match = room.match(/^([A-Z]+)-/);
+    return match ? match[1] : '';
+  }
+
+  generateRoomList(): string[] {
+    const rooms: string[] = [];
+    
+    // BCJ Campus - Building A (47 rooms)
+    for (let i = 101; i <= 115; i++) rooms.push(`A-${i}`);
+    for (let i = 201; i <= 216; i++) rooms.push(`A-${i}`);
+    for (let i = 301; i <= 316; i++) rooms.push(`A-${i}`);
+    
+    // Main Campus Buildings
+    rooms.push('C-21', 'C-22', 'C-23', 'C-24', 'C-25');
+    for (let i = 11; i <= 15; i++) rooms.push(`N-${i}`);
+    for (let i = 21; i <= 28; i++) rooms.push(`N-${i}`);
+    for (let i = 31; i <= 40; i++) rooms.push(`N-${i}`);
+    for (let i = 11; i <= 13; i++) rooms.push(`K-${i}`);
+    for (let i = 21; i <= 25; i++) rooms.push(`K-${i}`);
+    for (let i = 31; i <= 35; i++) rooms.push(`K-${i}`);
+    rooms.push('J-11', 'J-12', 'J-21', 'J-22', 'J-31', 'J-32');
+    rooms.push('B-11', 'B-21');
+    
+    // Lecaros Campus
+    for (let i = 11; i <= 15; i++) rooms.push(`L-${i}`);
+    for (let i = 21; i <= 24; i++) rooms.push(`L-${i}`);
+    for (let i = 11; i <= 14; i++) rooms.push(`M-${i}`);
+    rooms.push('M-21', 'M-22', 'M-23');
+    
+    return rooms;
+  }
+
+  // ===================================================================
+  // INITIALIZATION METHODS
+  // ===================================================================
   
   combineYearTerm() {
     const currentYear = new Date().getFullYear();
@@ -131,7 +197,9 @@ export class ExamSchedulerComponent implements OnInit {
     this.savedExamGroups = stored ? JSON.parse(stored) : [];
   }
 
-  // ===== Exam Group Management =====
+  // ===================================================================
+  // EXAM GROUP MANAGEMENT
+  // ===================================================================
   
   toggleExamGroupManager() {
     this.showExamGroupManager = !this.showExamGroupManager;
@@ -290,76 +358,113 @@ export class ExamSchedulerComponent implements OnInit {
     }
   }
 
-  // ===== Data Loading =====
+  // ===================================================================
+  // DATA LOADING
+  // ===================================================================
   
-  loadExamData() {
-    if (!this.activeTerm) {
-      this.global.swalAlertError('Please select a term/year first');
-      return;
+  async loadExamData() {
+  if (!this.activeTerm) {
+    this.showToast('Error', 'Please select a term first', 'destructive');
+    return false;
+  }
+
+  this.isLoadingApi = true;
+
+  try {
+    console.log('🔍 DEBUG: Requesting exams for term:', this.activeTerm);
+    
+    // ✅ CHANGED: Use CodeSummary endpoint instead
+    const response: any = await this.api.getCodeSummaryReport(this.activeTerm).toPromise();
+    
+    let parsed;
+    if (response && typeof response.json === 'function') {
+      parsed = response.json();
+    } else {
+      parsed = response;
     }
 
-    this.loadSwal();
-    
-    this.api.getCodeSummaryReport(this.activeTerm)
-      .map((response: any) => response.json())
-      .subscribe(
-        res => {
-          this.rawCodes = res.data || [];
-          Swal.close();
+    console.log('📥 Parsed API response:', parsed);
 
-          // Map exams and filter out SAS department
-          this.exams = this.rawCodes
-            .filter((obj: any) => {
-              const dept = (obj.dept || obj.DEPT || '').toUpperCase().trim();
-              return dept !== 'SAS';
-            })
-            .map((obj: any) => {
-              const lectureRoom = obj.roomNumber || obj.ROOM_NUMBER || obj.ROOM || '';
-              const lectureBuilding = lectureRoom ? lectureRoom.charAt(0).toUpperCase() : '';
-              
-              return {
-                code: obj.codeNo || obj.CODE || '',
-                version: obj.version || obj.VERSION || '',
-                subjectId: obj.subjectId || obj.SUBJECT_ID || '',
-                title: obj.subjectTitle || obj.DESCRIPTIVE_TITLE || obj.TITLE || '',
-                course: (obj.course || obj.COURSE || '').trim(),
-                yearLevel: obj.yearLevel || obj.YEAR_LEVEL || obj.year || 1,
-                lec: parseInt(obj.lecUnits || obj.LEC_UNITS || obj.lec || '3'),
-                oe: parseInt(obj.labUnits || obj.LAB_UNITS || obj.oe || '0'),
-                dept: obj.dept || obj.DEPT || obj.department || '',
-                instructor: obj.instructor || obj.INSTRUCTOR || obj.instructorName || '',
-                studentCount: parseInt(obj.studentCount || obj.STUDENT_COUNT || '30'),
-                isRegular: true,
-                lectureRoom: lectureRoom,
-                lectureBuilding: lectureBuilding
-              };
-            });
+    let data;
+    if (parsed && parsed.data && Array.isArray(parsed.data)) {
+      data = parsed.data;
+    } else if (Array.isArray(parsed)) {
+      data = parsed;
+    } else {
+      console.error('❌ Unexpected API response structure:', parsed);
+      throw new Error('API response is not in expected format');
+    }
 
-          this.rooms = this.getUniqueRooms(res.data);
-          this.extractRoomCapacities(res.data);
-          this.buildRoomPreferences();
-          this.categorizeSubjects();
-          
-          if (this.rooms.length === 0) {
-            this.rooms = ['A-101', 'A-201', 'N-101', 'N-201', 'K-101', 'K-201', 'C-101', 'L-101', 'M-101'];
-          }
-          
-          this.sharedData.getRoomSummary(res.data);
-          this.cdr.detectChanges();
-          
-          console.log('✅ Total exams loaded:', this.exams.length);
-          console.log('✅ Regular students:', this.exams.filter(e => e.isRegular).length);
-          console.log('✅ Total rooms extracted:', this.rooms.length);
-          
-          this.showToast('Success', `${this.exams.length} exams loaded (SAS excluded)`);
-        },
-        err => {
-          Swal.close();
-          console.error('❌ API Error:', err);
-          this.global.swalAlertError(err);
-        }
-      );
+    console.log('✅ API returned', data.length, 'exam records');
+
+    if (data.length > 0) {
+      console.log('🔍 DEBUG: First API item:', data[0]);
+      console.log('🔍 DEBUG: Available field names:', Object.keys(data[0]));
+    } else {
+      console.error('❌ DEBUG: API returned ZERO records!');
+      this.showToast('Error', 'No exam data found for this term', 'destructive');
+      return false;
+    }
+
+    this.rawCodes = data;
+
+    // ✅ FIXED: Map using actual field names from API
+    // Around line 410 - FIXED mapping
+this.exams = data
+  .filter((item: any) => {
+    const deptCode = (item.deptCode || item.dept || '').toUpperCase();
+    return deptCode !== 'SAS';
+  })
+  .map((item: any) => ({
+    code: item.codeNo || '',
+    version: item.version || '1',
+    subjectId: item.subjectId || '',
+    title: item.subjectTitle || '', // ✅ FIXED: was descriptiveTitle
+    course: (item.course || '').trim(),
+    yearLevel: parseInt(item.yearLevel || item.year || '1'),
+    lec: parseInt(item.lecUnits || item.lec || '3'),
+    oe: parseInt(item.oe || '0'),
+    dept: (item.deptCode || item.dept || '').toUpperCase(), // ✅ FIXED: use deptCode
+    instructor: item.instructor || 'TBA',
+    studentCount: parseInt(item.classSize || item.studentCount || '0'),
+    isRegular: true,
+    campus: item.roomCampusLocation || item.campus || 'MAIN',
+    lectureRoom: item.roomNumber || '',
+    lectureBuilding: this.extractBuilding(item.roomNumber || '')
+  }))
+  .filter((exam: Exam) => {
+    if (!exam.subjectId || !exam.course) {
+      console.warn('⚠️ Filtered out exam:', exam);
+      return false;
+    }
+    return true;
+  });
+
+    this.rooms = this.generateRoomList();
+
+    console.log('✅ Processed', this.exams.length, 'exams');
+    console.log('✅ Generated', this.rooms.length, 'rooms');
+
+    if (this.exams.length === 0) {
+      console.error('❌ No exams were successfully processed!');
+      return false;
+    }
+
+    console.log('🔍 DEBUG: Sample of first 3 processed exams:');
+    this.exams.slice(0, 3).forEach((exam, idx) => {
+      console.log(`  ${idx + 1}.`, exam);
+    });
+
+    return true;
+
+  } catch (error) {
+    console.error('❌ Error loading exam data:', error);
+    this.showToast('Error', 'Failed to load exam data from API', 'destructive');
+    return false;
+  } finally {
+    this.isLoadingApi = false;
   }
+}
 
   getUniqueRooms(data: any[]): string[] {
     if (!data || data.length === 0) return [];
@@ -500,712 +605,248 @@ export class ExamSchedulerComponent implements OnInit {
   }
 
   categorizeSubjects() {
-  this.subjectTypes.clear();
-  const subjectCourseCount = new Map<string, Set<string>>();
-  
-  this.exams.forEach(exam => {
-    if (!subjectCourseCount.has(exam.subjectId)) {
-      subjectCourseCount.set(exam.subjectId, new Set());
-    }
-    subjectCourseCount.get(exam.subjectId)!.add(exam.course);
-  });
-  
-  // Enhanced Gen Ed detection
-  subjectCourseCount.forEach((courses, subjectId) => {
-    const upperSubjectId = subjectId.toUpperCase();
-    
-    // Check if it's a Gen Ed by subject ID patterns or course count
-    const isGenEdByPattern = 
-      upperSubjectId.includes('LANG') ||
-      upperSubjectId.includes('GEED') ||
-      upperSubjectId.includes('GE ') ||
-      upperSubjectId.includes('CFED') ||
-      upperSubjectId.includes('PHED') ||
-      upperSubjectId.includes('NSTP') ||
-      upperSubjectId.includes('PE ') ||
-      upperSubjectId.includes('MATH') && courses.size >= 8 ||
-      upperSubjectId.includes('STS') ||
-      upperSubjectId.includes('ETHICS') ||
-      upperSubjectId.includes('PHILOS') ||
-      upperSubjectId.includes('LIT ') ||
-      courses.size >= 10; // Lower threshold from 15 to 10
-    
-    const type = isGenEdByPattern ? 'genEd' : 'major';
-    this.subjectTypes.set(subjectId, type);
-    
-    if (type === 'genEd') {
-      console.log(`📚 Gen Ed identified: ${subjectId} (${courses.size} courses)`);
-    }
-  });
-}
-
-  // ===== ENHANCED HYBRID ILP ALGORITHM =====
-  
-  generateExamSchedule() {
-    if (this.exams.length === 0) {
-      this.showToast('Error', 'Please import exams first', 'destructive');
-      return;
-    }
-
-    if (this.examDates.some(d => !d)) {
-      this.showToast('Error', 'Please set all exam dates first', 'destructive');
-      return;
-    }
-
-    Swal.fire({
-      title: 'Generate Schedule',
-      text: 'Apply Hybrid ILP + Student-Centric Heuristics algorithm?',
-      type: 'question',
-      showCancelButton: true,
-      confirmButtonText: '✨ Generate with ILP Algorithm',
-      cancelButtonText: 'Cancel',
-      confirmButtonColor: '#10b981'
-    }).then((result) => {
-      if (result.value) {
-        this.executeHybridILPAlgorithm();
-      }
-    });
-  }
-
-  executeHybridILPAlgorithm() {
-    Swal.fire({
-      title: 'Processing with Enhanced ILP Algorithm',
-      html: `
-        <div style="text-align: left; padding: 20px;">
-          <p><strong>Applying Hybrid ILP + Student-Centric Heuristics:</strong></p>
-          <ul style="margin: 15px 0; font-size: 14px;">
-            <li>✓ Prioritizing regular students</li>
-            <li>✓ Gen Eds first (SECAP) - avoiding 7:30am for PHED/CFED</li>
-            <li>✓ MATH subjects (SACE) - high priority</li>
-            <li>✓ Building conflict matrix</li>
-            <li>✓ 1.5-hour breaks (no consecutive)</li>
-            <li>✓ Same subject ID = same time, adjacent rooms</li>
-            <li>✓ Campus consistency with lecture schedule</li>
-            <li>✓ Ground floor preference (ascending order)</li>
-            <li>✓ Even distribution across ${this.days.length} days</li>
-            <li>✓ ARCH subjects → C building only</li>
-            <li>✓ No conflicts guaranteed</li>
-          </ul>
-        </div>
-      `,
-      allowOutsideClick: false,
-      allowEscapeKey: false,
-      onOpen: () => Swal.showLoading()
-    });
-
-    setTimeout(() => {
-      try {
-        const conflictMatrix = this.buildConflictMatrix();
-        const subjectPriorities = this.buildEnhancedSubjectPriorities(conflictMatrix);
-        const schedulingState = this.initializeEnhancedSchedulingState();
-        const result = this.enhancedHybridILPScheduling(subjectPriorities, schedulingState);
-        
-        Swal.close();
-        
-        if (this.selectedExamGroup && this.activeTerm) {
-          this.saveScheduleForGroup(this.selectedExamGroup.name, this.activeTerm);
-        }
-        
-        setTimeout(() => {
-          this.currentStep = 'generate';
-          this.showToast(
-            'Schedule Generated!', 
-            `${result.assigned} subjects scheduled (${result.unscheduled} pending, ${result.conflicts} conflicts resolved)`,
-            'success'
-          );
-          
-          console.log('📊 Scheduling Statistics:');
-          console.log(`  - Total subjects: ${subjectPriorities.length}`);
-          console.log(`  - Successfully scheduled: ${result.assigned}`);
-          console.log(`  - Unscheduled: ${result.unscheduled}`);
-          console.log(`  - Conflicts resolved: ${result.conflicts}`);
-          console.log(`  - Gen Eds scheduled: ${result.genEdsScheduled}`);
-          console.log(`  - MATH subjects scheduled: ${result.mathScheduled}`);
-        }, 100);
-
-      } catch (error) {
-        Swal.close();
-        setTimeout(() => {
-          console.error('❌ Scheduling error:', error);
-          this.global.swalAlertError(`Generation error: ${error.message || 'Unknown error'}`);
-        }, 100);
-      }
-    }, 300);
-  }
-
-  buildConflictMatrix(): ConflictMatrix {
-    const matrix: ConflictMatrix = {};
-    const courseYearGroups = new Map<string, Set<string>>();
+    this.subjectTypes.clear();
+    const subjectCourseCount = new Map<string, Set<string>>();
     
     this.exams.forEach(exam => {
-      const key = `${exam.course}_${exam.yearLevel}`;
-      if (!courseYearGroups.has(key)) {
-        courseYearGroups.set(key, new Set());
+      if (!subjectCourseCount.has(exam.subjectId)) {
+        subjectCourseCount.set(exam.subjectId, new Set());
       }
-      courseYearGroups.get(key)!.add(exam.subjectId);
+      subjectCourseCount.get(exam.subjectId)!.add(exam.course);
     });
     
-    for (const [courseYear, subjects] of courseYearGroups.entries()) {
-      matrix[courseYear] = {};
+    // Enhanced Gen Ed detection
+    subjectCourseCount.forEach((courses, subjectId) => {
+      const upperSubjectId = subjectId.toUpperCase();
       
-      for (const subjectId of subjects) {
-        matrix[courseYear][subjectId] = new Set(subjects);
-        matrix[courseYear][subjectId].delete(subjectId);
+      // Check if it's a Gen Ed by subject ID patterns or course count
+      const isGenEdByPattern = 
+        upperSubjectId.includes('LANG') ||
+        upperSubjectId.includes('GEED') ||
+        upperSubjectId.includes('GE ') ||
+        upperSubjectId.includes('CFED') ||
+        upperSubjectId.includes('PHED') ||
+        upperSubjectId.includes('NSTP') ||
+        upperSubjectId.includes('PE ') ||
+        upperSubjectId.includes('MATH') && courses.size >= 8 ||
+        upperSubjectId.includes('STS') ||
+        upperSubjectId.includes('ETHICS') ||
+        upperSubjectId.includes('PHILOS') ||
+        upperSubjectId.includes('LIT ') ||
+        courses.size >= 10; // Lower threshold from 15 to 10
+      
+      const type = isGenEdByPattern ? 'genEd' : 'major';
+      this.subjectTypes.set(subjectId, type);
+      
+      if (type === 'genEd') {
+        console.log(`📚 Gen Ed identified: ${subjectId} (${courses.size} courses)`);
       }
-    }
-    
-    return matrix;
+    });
   }
 
-  buildEnhancedSubjectPriorities(conflictMatrix: ConflictMatrix): SubjectPriority[] {
-  const subjectGroups = new Map<string, Exam[]>();
+  // ===================================================================
+  // NEW ALGORITHM - MAIN SCHEDULING METHOD
+  // ===================================================================
   
-  this.exams.forEach(exam => {
-    if (!subjectGroups.has(exam.subjectId)) {
-      subjectGroups.set(exam.subjectId, []);
+  // Replace your generateExamSchedule() method in exam-scheduler.component.ts
+
+async generateExamSchedule() {
+  if (!this.selectedExamGroup) {
+    this.showToast('Error', 'Please select an exam group first', 'destructive');
+    return;
+  }
+
+  if (this.hasEmptyDates()) {
+    this.showToast('Error', 'Please fill in all exam dates', 'destructive');
+    return;
+  }
+
+  Swal.fire({
+    title: '🔄 Loading Exam Data',
+    text: 'Fetching exam data from API...',
+    allowOutsideClick: false,
+    allowEscapeKey: false,
+    onOpen: () => {
+      Swal.showLoading();
     }
-    subjectGroups.get(exam.subjectId)!.push(exam);
   });
-  
-  const priorities: SubjectPriority[] = [];
-  
-  for (const [subjectId, exams] of subjectGroups.entries()) {
-    const firstExam = exams[0];
-    const units = firstExam.lec + firstExam.oe;
-    const isArchSubject = subjectId.toUpperCase().includes('ARCH');
-    const upperSubjectId = subjectId.toUpperCase();
+
+  try {
+    const dataLoaded = await this.loadExamData();
     
-    let type: 'genEd' | 'math' | 'major' = 'major';
-    
-    // Enhanced type detection
-    if (this.subjectTypes.get(subjectId) === 'genEd') {
-      type = 'genEd';
-    } else if ((firstExam.dept.toUpperCase() === 'SACE' && upperSubjectId.includes('MATH')) ||
-               (firstExam.dept.toUpperCase() === 'SACE' && upperSubjectId.includes('STAT'))) {
-      type = 'math';
+    if (!dataLoaded || this.exams.length === 0) {
+      Swal.close();
+      Swal.fire({
+        title: 'Error',
+        text: 'No exam data loaded. Please check the API connection.',
+        type: 'error',
+        confirmButtonText: 'OK'
+      });
+      return;
     }
-    
-    let priority = 0;
-    
-    // Priority calculations
-    const regularCount = exams.filter(e => e.isRegular).length;
-    priority += regularCount * 100;
-    
-    // CRITICAL: All Gen Eds get highest priority
-    if (type === 'genEd') {
-      priority += 100000; // Much higher priority
-    }
-    // MATH subjects high priority
-    else if (type === 'math') {
-      priority += 50000;
-    }
-    // ARCH subjects need C building
-    else if (isArchSubject) {
-      priority += 40000;
-    }
-    // Major subjects
-    else {
-      priority += 10000;
-    }
-    
-    // Bonus for 6-unit subjects
-    priority += units * 500;
-    
-    // Bonus for more students
-    const totalStudents = exams.reduce((sum, e) => sum + (e.studentCount || 30), 0);
-    priority += totalStudents * 5;
-    
-    // Bonus for fewer sections (easier to schedule)
-    if (exams.length === 1) {
-      priority += 5000;
-    } else if (exams.length === 2) {
-      priority += 3000;
-    }
-    
-    const requiresAdjacent = exams.length > 1;
-    
-    const conflicts = new Set<string>();
-    exams.forEach(exam => {
-      const key = `${exam.course}_${exam.yearLevel}`;
-      if (conflictMatrix[key] && conflictMatrix[key][subjectId]) {
-        conflictMatrix[key][subjectId].forEach(c => conflicts.add(c));
+
+    Swal.fire({
+      title: '🧠 Generating Schedule',
+      text: `Processing ${this.exams.length} exams...`,
+      allowOutsideClick: false,
+      allowEscapeKey: false,
+      onOpen: () => {
+        Swal.showLoading();
       }
     });
+
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    const numDays = this.examDates.filter(d => d).length;
+    const startTime = Date.now();
     
-    priorities.push({
-      subjectId,
-      exams,
-      priority,
-      type,
-      units,
-      studentCount: totalStudents,
-      conflicts,
-      isRegular: regularCount > 0,
-      requiresAdjacent
+    this.generatedSchedule = algorithmGenerateSchedule(
+      this.exams,
+      this.rooms,
+      numDays
+    );
+
+    const endTime = Date.now();
+    const duration = ((endTime - startTime) / 1000).toFixed(2);
+    const stats = this.calculateScheduleStats();
+
+    // ✅ Close loading dialog first
+    Swal.close();
+    
+    // ✅ Small delay to ensure DOM is ready
+    await new Promise(resolve => setTimeout(resolve, 50));
+
+    // ✅ Show success dialog with button
+    const result = await Swal.fire({
+  title: '✅ Schedule Generated Successfully!',
+  html: `
+    <div style="text-align: left; padding: 15px;">
+      <div style="background: #e8f5e9; padding: 15px; border-radius: 5px; margin-bottom: 15px;">
+        <p style="margin: 0; color: #2e7d32;"><strong>⏱️ Generation Time: ${duration} seconds</strong></p>
+      </div>
+      
+      <h4 style="color: #1565C0; margin-bottom: 10px;">📊 Statistics:</h4>
+      <ul style="list-style: none; padding: 0;">
+        <li>✅ Total Exams: <strong>${this.exams.length}</strong></li>
+        <li>✅ Scheduled: <strong>${stats.scheduled}</strong> (${stats.coverage}%)</li>
+        <li>📅 Days: <strong>${numDays}</strong></li>
+        <li>🏫 Rooms Used: <strong>${stats.roomsUsed}</strong></li>
+        <li>⚠️ Conflicts: <strong>${stats.conflicts}</strong></li>
+      </ul>
+    </div>
+  `,
+  type: 'success',
+  showCancelButton: true,
+  confirmButtonText: '📋 View Schedule',
+  cancelButtonText: '✖ Close',
+  confirmButtonColor: '#10b981',
+  cancelButtonColor: '#6b7280',
+  allowOutsideClick: false
+});
+
+    // ✅ CRITICAL FIX: Navigate immediately when button is clicked
+    if (result.value) {
+  console.log('🔍 Navigating to schedule view...');
+  console.log('🔍 Generated Schedule Length:', this.generatedSchedule.length);
+      
+      // Then prepare the data
+      this.generateSimpleScheduleData();
+      
+      // Reset filters
+       this.selectedCourse = 'ALL';
+       this.selectedYearLevel = 'ALL';
+       this.selectedDepartment = 'ALL';
+      
+       // Set the step AFTER data is ready
+      this.currentStep = 'simpleschedule';
+
+
+      // Force multiple change detections
+      this.cdr.detectChanges();
+      
+      // Small delay and another change detection
+      console.log('✅ Navigation complete. Current step:', this.currentStep);
+    }
+
+  } catch (error) {
+    console.error('❌ Error generating schedule:', error);
+    Swal.close();
+    
+    Swal.fire({
+      title: 'Error',
+      text: 'Failed to generate schedule. Check console for details.',
+      type: 'error',
+      confirmButtonText: 'OK'
     });
   }
-  
-  priorities.sort((a, b) => b.priority - a.priority);
-  
-  console.log('🎯 Top 20 Priority Subjects:');
-  priorities.slice(0, 20).forEach((p, i) => {
-    console.log(`  ${i+1}. ${p.subjectId} (${p.type}) - Priority: ${p.priority} - Sections: ${p.exams.length}`);
-  });
-  
-  return priorities;
 }
 
-  initializeEnhancedSchedulingState(): SchedulingState {
-    const state: SchedulingState = {
-      assignments: new Map(),
-      roomUsage: new Map(),
-      studentLoad: new Map(),
-      campusUsage: new Map(),
-      subjectScheduled: new Map(),
-      consecutiveCheck: new Map()
-    };
+  calculateScheduleStats(): any {
+    const scheduled = this.generatedSchedule.length;
+    const total = this.exams.length;
+    const coverage = ((scheduled / total) * 100).toFixed(1);
     
-    this.days.forEach(day => {
-      state.assignments.set(day, []);
-      
-      const roomMap = new Map<string, Set<string>>();
-      this.timeSlots.forEach(slot => {
-        roomMap.set(slot, new Set());
-      });
-      state.roomUsage.set(day, roomMap);
-      
-      this.exams.forEach(exam => {
-        const key = `${exam.course}_${exam.yearLevel}`;
-        if (!state.studentLoad.has(key)) {
-          state.studentLoad.set(key, new Map());
-        }
-        state.studentLoad.get(key)!.set(day, 0);
-      });
-      
-      state.campusUsage.set(day, new Map());
-      
-      const courseYears = new Set(this.exams.map(e => `${e.course}_${e.yearLevel}`));
-      courseYears.forEach(courseYear => {
-        if (!state.consecutiveCheck.has(courseYear)) {
-          state.consecutiveCheck.set(courseYear, new Map());
-        }
-        state.consecutiveCheck.get(courseYear)!.set(day, new Set());
-      });
-    });
+    // Count unique rooms used
+    const roomsUsed = new Set(this.generatedSchedule.map(e => e.ROOM)).size;
     
-    return state;
-  }
-
-  enhancedHybridILPScheduling(priorities: SubjectPriority[], state: SchedulingState): any {
-    let assignedCount = 0;
-    let conflicts = 0;
-    let genEdsScheduled = 0;
-    let mathScheduled = 0;
-    const schedule: ScheduledExam[] = [];
-    const unscheduledSubjects: string[] = [];
-    
-    const scheduledSubjects = new Set<string>();
-    
-    for (const subject of priorities) {
-      if (scheduledSubjects.has(subject.subjectId)) continue;
-      
-      const bestSlot = this.findEnhancedOptimalSlot(subject, state);
-      
-      if (bestSlot) {
-        const wasAssigned = this.assignSubjectToSlotEnhanced(subject, bestSlot, state, schedule);
-        
-        if (wasAssigned) {
-          scheduledSubjects.add(subject.subjectId);
-          assignedCount++;
-          
-          if (subject.type === 'genEd') genEdsScheduled++;
-          if (subject.type === 'math') mathScheduled++;
-        } else {
-          unscheduledSubjects.push(subject.subjectId);
-        }
-      } else {
-        conflicts++;
-        unscheduledSubjects.push(subject.subjectId);
-        console.warn(`⚠️ Could not find slot for ${subject.subjectId} (${subject.type})`);
-      }
-    }
-    
-    this.generatedSchedule = schedule;
-    
-    if (unscheduledSubjects.length > 0) {
-      console.warn('⚠️ Unscheduled subjects:', unscheduledSubjects);
-    }
+    // Check for conflicts (should be 0)
+    const conflicts = this.detectConflicts();
     
     return {
-      success: true,
-      assigned: assignedCount,
-      unscheduled: unscheduledSubjects.length,
-      conflicts,
-      total: priorities.length,
-      genEdsScheduled,
-      mathScheduled
+      scheduled,
+      total,
+      coverage,
+      roomsUsed,
+      conflicts
     };
   }
 
-  findEnhancedOptimalSlot(
-  subject: SubjectPriority,
-  state: SchedulingState
-): {day: string, slot: string, slots: string[]} | null {
-  
-  const bestOptions: SlotOption[] = [];
-  const isSummer = this.activeTerm && this.activeTerm.endsWith('3');
-  const maxPerDay = isSummer ? 6 : 5; // Increased from 4 to 5 for regular terms
-  
-  // Only PHED and CFED should avoid 7:30am
-  const isPHEDorCFED = subject.subjectId.toUpperCase().includes('PHED') || 
-                       subject.subjectId.toUpperCase().includes('CFED');
-  
-  for (let dayIdx = 0; dayIdx < this.days.length; dayIdx++) {
-    const day = this.days[dayIdx];
+  detectConflicts(): number {
+    let conflictCount = 0;
     
-    for (let slotIdx = 0; slotIdx < this.timeSlots.length; slotIdx++) {
-      const slot = this.timeSlots[slotIdx];
-      
-      // ONLY PHED/CFED avoid 7:30am, other Gen Eds can use it
-      if (isPHEDorCFED && slot === '7:30-9:00') {
-        continue;
+    // Group by course-year
+    const courseYearGroups: { [key: string]: ScheduledExam[] } = {};
+    
+    this.generatedSchedule.forEach(exam => {
+      const key = `${exam.COURSE}-${exam.YEAR_LEVEL}`;
+      if (!courseYearGroups[key]) {
+        courseYearGroups[key] = [];
       }
+      courseYearGroups[key].push(exam);
+    });
+    
+    // Check each group for conflicts
+    Object.values(courseYearGroups).forEach(exams => {
+      const slots = new Map<string, Set<string>>();
       
-      const slotsNeeded = subject.units >= 6 ? 2 : 1;
-      const slots: string[] = [slot];
-      
-      if (slotsNeeded === 2) {
-        if (slotIdx + 1 < this.timeSlots.length) {
-          slots.push(this.timeSlots[slotIdx + 1]);
+      exams.forEach(exam => {
+        const slotKey = `${exam.DAY}-${exam.SLOT}`;
+        if (!slots.has(slotKey)) {
+          slots.set(slotKey, new Set());
+        }
+        
+        const subjects = slots.get(slotKey);
+        if (subjects.has(exam.SUBJECT_ID)) {
+          // Same subject, different section - OK
         } else {
-          continue;
+          subjects.add(exam.SUBJECT_ID);
         }
-      }
-      
-      const cost = this.calculateEnhancedSlotCost(subject, day, slots, state, maxPerDay);
-      
-      if (cost >= 0) {
-        const availableRooms = this.getAvailableRoomsForSubject(subject, day, slots[0], state);
-        
-        if (availableRooms.length >= subject.exams.length) {
-          bestOptions.push({ day, slot, slots, cost, availableRooms });
-        }
-      }
-    }
-  }
-  
-  if (bestOptions.length === 0) return null;
-  
-  bestOptions.sort((a, b) => a.cost - b.cost);
-  
-  return {
-    day: bestOptions[0].day,
-    slot: bestOptions[0].slot,
-    slots: bestOptions[0].slots
-  };
-}
-
-calculateEnhancedSlotCost(
-  subject: SubjectPriority,
-  day: string,
-  slots: string[],
-  state: SchedulingState,
-  maxPerDay: number
-): number {
-  let cost = 0;
-  
-  for (const exam of subject.exams) {
-    const courseYearKey = `${exam.course}_${exam.yearLevel}`;
-    const studentLoad = state.studentLoad.get(courseYearKey);
-    const currentLoad = studentLoad ? studentLoad.get(day) || 0 : 0;
-    
-    // Hard constraint: max subjects per day
-    if (currentLoad >= maxPerDay) {
-      return -1;
-    }
-    
-    // Hard constraint: Check for time conflicts
-    for (const timeSlot of slots) {
-      const hasConflict = Array.from(state.assignments.get(day) || []).some(assigned => 
-        assigned.SLOT === timeSlot &&
-        assigned.COURSE === exam.course &&
-        assigned.YEAR_LEVEL === exam.yearLevel &&
-        assigned.SUBJECT_ID !== subject.subjectId
-      );
-      
-      if (hasConflict) {
-        return -1;
-      }
-    }
-    
-    // Soft constraint: Avoid consecutive subjects but don't block
-    const slotIdx = this.timeSlots.indexOf(slots[0]);
-    
-    if (slotIdx > 0) {
-      const prevSlot = this.timeSlots[slotIdx - 1];
-      const hasPrevious = Array.from(state.assignments.get(day) || []).some(assigned =>
-        assigned.SLOT === prevSlot &&
-        assigned.COURSE === exam.course &&
-        assigned.YEAR_LEVEL === exam.yearLevel
-      );
-      
-      if (hasPrevious) {
-        const prevAssignment = Array.from(state.assignments.get(day) || [])
-          .find(a => a.SLOT === prevSlot && a.COURSE === exam.course && a.YEAR_LEVEL === exam.yearLevel);
-        
-        const prevSubjectType = prevAssignment ? this.subjectTypes.get(prevAssignment.SUBJECT_ID) : undefined;
-        
-        // Only block if BOTH are majors (allow Gen Ed + Major consecutive)
-        if (subject.type === 'major' && prevSubjectType === 'major') {
-          cost += 500; // High penalty but not blocking
-        } else {
-          cost += 100; // Small penalty
-        }
-      }
-    }
-    
-    if (slotIdx + slots.length < this.timeSlots.length) {
-      const nextSlot = this.timeSlots[slotIdx + slots.length];
-      const hasNext = Array.from(state.assignments.get(day) || []).some(assigned =>
-        assigned.SLOT === nextSlot &&
-        assigned.COURSE === exam.course &&
-        assigned.YEAR_LEVEL === exam.yearLevel
-      );
-      
-      if (hasNext) {
-        const nextAssignment = Array.from(state.assignments.get(day) || [])
-          .find(a => a.SLOT === nextSlot && a.COURSE === exam.course && a.YEAR_LEVEL === exam.yearLevel);
-        
-        const nextSubjectType = nextAssignment ? this.subjectTypes.get(nextAssignment.SUBJECT_ID) : undefined;
-        
-        if (subject.type === 'major' && nextSubjectType === 'major') {
-          cost += 500;
-        } else {
-          cost += 100;
-        }
-      }
-    }
-  }
-  
-  // Soft constraint: Even distribution
-  const totalSubjects = this.exams.length;
-  const targetPerDay = totalSubjects / this.days.length;
-  const dayAssignments = state.assignments.get(day) || [];
-  const deviation = Math.abs(dayAssignments.length - targetPerDay);
-  cost += deviation * 5; // Reduced weight
-  
-  // Soft constraint: Prefer ground floor
-  cost += slots.length * 3; // Reduced weight
-  
-  return cost;
-}
-
-
- getAvailableRoomsForSubject(
-  subject: SubjectPriority,
-  day: string,
-  slot: string,
-  state: SchedulingState
-): string[] {
-  const usedRooms = state.roomUsage.get(day)!.get(slot)!;
-  let availableRooms = this.rooms.filter(r => !usedRooms.has(r));
-  
-  if (availableRooms.length === 0) return [];
-  
-  const firstExam = subject.exams[0];
-  const dept = firstExam.dept.toUpperCase();
-  const isArchSubject = firstExam.subjectId.toUpperCase().includes('ARCH');
-  
-  // Primary room filtering
-  let primaryRooms: string[] = [];
-  let fallbackRooms: string[] = [];
-  
-  if (isArchSubject) {
-    // ARCH subjects prefer C building but can use N/K if needed
-    primaryRooms = availableRooms.filter(r => r.startsWith('C-'));
-    fallbackRooms = availableRooms.filter(r => r.startsWith('N-') || r.startsWith('K-'));
-  } else if (['SABH', 'SECAP'].includes(dept)) {
-    // BCJ Building (A rooms)
-    primaryRooms = availableRooms.filter(r => r.startsWith('A-'));
-    fallbackRooms = []; // No fallback for BCJ departments
-  } else if (dept === 'SACE') {
-    // MAIN Building (N, K)
-    primaryRooms = availableRooms.filter(r => r.startsWith('N-') || r.startsWith('K-'));
-    fallbackRooms = availableRooms.filter(r => r.startsWith('C-')); // Can use C if needed
-  } else if (dept === 'SHAS') {
-    // MAIN (N, K) or LECAROS (L, M)
-    primaryRooms = availableRooms.filter(r => 
-      r.startsWith('N-') || r.startsWith('K-') || 
-      r.startsWith('L-') || r.startsWith('M-')
-    );
-    fallbackRooms = [];
-  } else {
-    // Unknown department - use any available room
-    primaryRooms = availableRooms;
-    fallbackRooms = [];
-  }
-  
-  // Use primary rooms if available, otherwise use fallback
-  let roomsToUse = primaryRooms.length >= subject.exams.length ? primaryRooms : 
-                   (primaryRooms.length + fallbackRooms.length >= subject.exams.length) ? 
-                   [...primaryRooms, ...fallbackRooms] : availableRooms;
-  
-  if (roomsToUse.length === 0) {
-    console.warn(`⚠️ No suitable rooms for ${dept} - ${firstExam.subjectId}, using any available`);
-    roomsToUse = availableRooms;
-  }
-  
-  // Prioritize lecture room if available
-  if (firstExam.lectureRoom && roomsToUse.includes(firstExam.lectureRoom)) {
-    const idx = roomsToUse.indexOf(firstExam.lectureRoom);
-    roomsToUse.splice(idx, 1);
-    roomsToUse.unshift(firstExam.lectureRoom);
-  }
-  
-  // Sort by floor (ground floor first)
-  roomsToUse.sort((a, b) => {
-    const aPref = this.roomPreferences.get(a);
-    const bPref = this.roomPreferences.get(b);
-    
-    if (!aPref || !bPref) return 0;
-    
-    if (aPref.isGroundFloor && !bPref.isGroundFloor) return -1;
-    if (!aPref.isGroundFloor && bPref.isGroundFloor) return 1;
-    
-    if (aPref.floor !== bPref.floor) return aPref.floor - bPref.floor;
-    
-    const aMatch = a.match(/\d+/);
-    const bMatch = b.match(/\d+/);
-    const aNum = parseInt(aMatch ? aMatch[0] : '0');
-    const bNum = parseInt(bMatch ? bMatch[0] : '0');
-    return aNum - bNum;
-  });
-  
-  // Handle adjacent rooms for multiple sections
-  if (subject.requiresAdjacent && subject.exams.length > 1) {
-    return this.findAdjacentRooms(roomsToUse, subject.exams.length);
-  }
-  
-  return roomsToUse;
-}
-
-  findAdjacentRooms(availableRooms: string[], count: number): string[] {
-  if (count <= 1) return availableRooms;
-  
-  for (let i = 0; i <= availableRooms.length - count; i++) {
-    const group = availableRooms.slice(i, i + count);
-    const building = group[0].charAt(0);
-    
-    if (group.every(r => r.startsWith(building))) {
-      const numbers = group.map(r => {
-        const match = r.match(/\d+/);
-        return parseInt(match ? match[0] : '0');
       });
-      const maxDiff = Math.max(...numbers) - Math.min(...numbers);
       
-      if (maxDiff <= 5) {
-        return group;
-      }
-    }
-  }
-  
-  const buildingGroups = new Map<string, string[]>();
-  availableRooms.forEach(room => {
-    const building = room.charAt(0);
-    if (!buildingGroups.has(building)) {
-      buildingGroups.set(building, []);
-    }
-    buildingGroups.get(building)!.push(room);
-  });
-  
-  for (const [building, rooms] of buildingGroups.entries()) {
-    if (rooms.length >= count) {
-      return rooms.slice(0, count);
-    }
-  }
-  
-  return availableRooms.slice(0, count);
-}
-
-
-  assignSubjectToSlotEnhanced(
-  subject: SubjectPriority,
-  slot: {day: string, slot: string, slots: string[]},
-  state: SchedulingState,
-  schedule: ScheduledExam[]
-): boolean {
-  
-  const { day, slots } = slot;
-  const availableRooms = this.getAvailableRoomsForSubject(subject, day, slots[0], state);
-  
-  if (availableRooms.length < subject.exams.length) {
-    console.warn(`⚠️ Not enough rooms for ${subject.subjectId}`);
-    return false;
-  }
-  
-  subject.exams.forEach((exam, idx) => {
-    const room = availableRooms[idx];
+      // Check if any slot has more than one subject (conflict)
+      slots.forEach(subjects => {
+        if (subjects.size > 1) {
+          conflictCount++;
+        }
+      });
+    });
     
-    for (const timeSlot of slots) {
-      const scheduledExam: ScheduledExam = {
-        CODE: exam.code,
-        SUBJECT_ID: exam.subjectId,
-        DESCRIPTIVE_TITLE: exam.title,
-        COURSE: exam.course,
-        YEAR_LEVEL: exam.yearLevel,
-        INSTRUCTOR: exam.instructor,
-        DEPT: exam.dept,
-        OE: exam.oe,
-        DAY: day,
-        SLOT: timeSlot,
-        ROOM: room,
-        UNITS: exam.lec + exam.oe,
-        STUDENT_COUNT: exam.studentCount,
-        PRIORITY: subject.priority,
-        IS_REGULAR: exam.isRegular,
-        LECTURE_ROOM: exam.lectureRoom
-      };
-      
-      schedule.push(scheduledExam);
-      state.assignments.get(day)!.push(scheduledExam);
-      state.roomUsage.get(day)!.get(timeSlot)!.add(room);
-    }
-    
-    const courseYearKey = `${exam.course}_${exam.yearLevel}`;
-    const loadMap = state.studentLoad.get(courseYearKey);
-    if (loadMap) {
-      const current = loadMap.get(day) || 0;
-      loadMap.set(day, current + 1);
-    }
-    
-    const roomPref = this.roomPreferences.get(room);
-    if (roomPref) {
-      state.campusUsage.get(day)!.set(courseYearKey, roomPref.campus);
-    }
-    
-    // Fixed: Replace optional chaining with traditional check
-    const consecutiveCheckMap = state.consecutiveCheck.get(courseYearKey);
-    if (consecutiveCheckMap) {
-      const daySet = consecutiveCheckMap.get(day);
-      if (daySet) {
-        daySet.add(subject.subjectId);
-      }
-    }
-  });
-  
-  state.subjectScheduled.set(subject.subjectId, { day, slot: slots[0] });
-  
-  return true;
-}
-
-  getBuildingCampus(building: string): 'BCJ' | 'MAIN' | 'LECAROS' {
-    if (building === 'A') return 'BCJ';
-    if (['N', 'K', 'C'].includes(building)) return 'MAIN';
-    if (['L', 'M'].includes(building)) return 'LECAROS';
-    return 'MAIN';
+    return conflictCount;
   }
 
-  // ===== Schedule Regeneration =====
+  // ===================================================================
+  // SCHEDULE REGENERATION
+  // ===================================================================
   
   regenerateScheduleForGroup(group: ExamGroup) {
     this.selectedExamGroup = group;
@@ -1280,7 +921,9 @@ calculateEnhancedSlotCost(
     }
   }
 
-  // ===== Storage Management =====
+  // ===================================================================
+  // STORAGE MANAGEMENT
+  // ===================================================================
   
   private saveScheduleForGroup(groupName: string, termYear: string) {
     const key = `schedule_${groupName}_${termYear}`;
@@ -1376,7 +1019,9 @@ calculateEnhancedSlotCost(
     }));
   }
 
-  // ===== View Generation =====
+  // ===================================================================
+  // VIEW GENERATION
+  // ===================================================================
   
   generateCourseSummaryData() {
     const summaryMap: { [course: string]: ScheduledExam[] } = {};
@@ -1503,7 +1148,22 @@ calculateEnhancedSlotCost(
     this.cdr.detectChanges();
   }
 
-  // ===== Editing Methods =====
+
+  getUniqueDepartments(): string[] {
+  console.log('🔍 Getting unique departments...');
+  const departments = new Set<string>();
+  this.generatedSchedule.forEach(exam => {
+    if (exam.DEPT) departments.add(exam.DEPT);
+  });
+  const result = ['ALL', ...Array.from(departments).sort()];
+  console.log('✅ Unique departments:', result);
+  return result;
+}
+
+
+  // ===================================================================
+  // EDITING METHODS
+  // ===================================================================
   
   startEdit(index: number) {
     this.editingRow = index;
@@ -1530,7 +1190,9 @@ calculateEnhancedSlotCost(
     }
   }
 
-  // ===== Exam Moving =====
+  // ===================================================================
+  // EXAM MOVING
+  // ===================================================================
   
   showMoveOptions(exam: ScheduledExam, day: string, slot: string) {
     if (!exam) {
@@ -1550,6 +1212,22 @@ calculateEnhancedSlotCost(
   closeMovePopup() {
     this.movePopupVisible = false;
   }
+
+
+ // Add this method if you haven't already
+selectActiveDay(day: string): void {
+  console.log('📅 Selecting day:', day);
+  console.log('📅 Current activeDay:', this.activeDay);
+  
+  this.activeDay = day;
+  
+  console.log('📅 New activeDay:', this.activeDay);
+  
+  // Force Angular to detect changes
+  this.cdr.detectChanges();
+  
+  console.log('✅ Day selection complete');
+}
 
   applyMove(newDay: string, newSlot: string) {
     if (!this.moveExamData || !this.moveExamData.groupExams) {
@@ -1629,7 +1307,125 @@ calculateEnhancedSlotCost(
     }
   }
 
-  // ===== Utility Methods =====
+// Method to navigate to room grid
+viewRoomScheduleGrid() {
+  console.log('📅 viewRoomScheduleGrid() called');
+  this.currentStep = 'roomgrid';
+  this.activeDay = this.days[0];
+  this.cdr.detectChanges();
+}
+
+// Get sorted list of rooms
+getRoomsForGrid(): string[] {
+  const roomsInSchedule = new Set<string>();
+  this.generatedSchedule.forEach(exam => {
+    if (exam.ROOM) roomsInSchedule.add(exam.ROOM);
+  });
+  
+  return Array.from(roomsInSchedule).sort((a, b) => {
+    // Sort by building letter, then by room number
+    const aBuilding = a.charAt(0);
+    const bBuilding = b.charAt(0);
+    
+    if (aBuilding !== bBuilding) {
+      return aBuilding.localeCompare(bBuilding);
+    }
+    
+    // ✅ FIXED: Use traditional approach instead of optional chaining
+    const aMatch = a.match(/\d+/);
+    const aNum = parseInt(aMatch ? aMatch[0] : '0');
+    
+    const bMatch = b.match(/\d+/);
+    const bNum = parseInt(bMatch ? bMatch[0] : '0');
+    
+    return aNum - bNum;
+  });
+}
+
+// Get data for a specific room and time slot
+getRoomSlotData(room: string, slot: string, day: string): any {
+  const exam = this.generatedSchedule.find(e => 
+    e.ROOM === room && e.SLOT === slot && e.DAY === day
+  );
+  
+  if (!exam) return null;
+  
+  return {
+    code: exam.CODE,
+    subjectId: exam.SUBJECT_ID,
+    course: exam.COURSE,
+    year: exam.YEAR_LEVEL,
+    dept: exam.DEPT,
+    bgColor: this.getDeptColor(exam.DEPT)
+  };
+}
+
+// Get count of occupied slots for a day
+getOccupiedSlotsCount(day: string): number {
+  return this.generatedSchedule.filter(e => e.DAY === day).length;
+}
+
+// Get utilization percentage
+getUtilizationPercent(day: string): string {
+  const totalSlots = this.getRoomsForGrid().length * this.timeSlots.length;
+  const occupied = this.getOccupiedSlotsCount(day);
+  
+  if (totalSlots === 0) return '0.0';
+  
+  return ((occupied / totalSlots) * 100).toFixed(1);
+}
+
+// Download room grid as Excel
+downloadRoomGridExcel() {
+  // Create workbook with one sheet per day
+  const wb: XLSX.WorkBook = XLSX.utils.book_new();
+  
+  this.days.forEach(day => {
+    const rooms = this.getRoomsForGrid();
+    const data: any[] = [];
+    
+    // Header row
+    const headerRow = ['ROOM', ...this.timeSlots];
+    data.push(headerRow);
+    
+    // Data rows
+    rooms.forEach(room => {
+      const row = [room];
+      
+      this.timeSlots.forEach(slot => {
+        const slotData = this.getRoomSlotData(room, slot, day);
+        row.push(slotData ? slotData.code : '');
+      });
+      
+      data.push(row);
+    });
+    
+    const ws: XLSX.WorkSheet = XLSX.utils.aoa_to_sheet(data);
+    
+    // Set column widths
+    ws['!cols'] = [
+      { wch: 10 }, // Room column
+      ...this.timeSlots.map(() => ({ wch: 12 })) // Time slot columns
+    ];
+    
+    const sheetName = this.getDayName(day).substring(0, 31); // Excel sheet name limit
+    XLSX.utils.book_append_sheet(wb, ws, sheetName);
+  });
+  
+  const fileName = this.selectedExamGroup 
+    ? `${this.selectedExamGroup.name}_Room_Grid.xlsx`
+    : 'Room_Schedule_Grid.xlsx';
+  
+  XLSX.writeFile(wb, fileName);
+  
+  this.showToast('Success', 'Room grid exported to Excel');
+}
+
+
+
+  // ===================================================================
+  // UTILITY METHODS
+  // ===================================================================
   
   downloadScheduleCSV() {
     if (this.generatedSchedule.length === 0) return;
@@ -1645,22 +1441,30 @@ calculateEnhancedSlotCost(
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const groupName = (this.selectedExamGroup && this.selectedExamGroup.name) || 'export';
-    saveAs(blob, `exam_schedule_${groupName}_ILP.csv`);
+    saveAs(blob, `exam_schedule_${groupName}_ENHANCED.csv`);
   }
 
   getDeptColor(dept: string): string {
-    const colors: { [key: string]: string } = {
-      'SACE': '#ef4444',
-      'SABH': '#facc15',
-      'SECAP': '#3b82f6',
-      'SHAS': '#22c55e'
-    };
-    return dept ? colors[dept.toUpperCase()] || '#6b7280' : '#6b7280';
-  }
+  const colors: { [key: string]: string } = {
+    'SACE': '#ef4444',    // Red
+    'SABH': '#facc15',    // Yellow
+    'SECAP': '#3b82f6',   // Blue
+    'SHAS': '#22c55e'     // Green
+  };
+  return dept ? colors[dept.toUpperCase()] || '#6b7280' : '#6b7280';
+}
 
-  goToStep(step: 'import' | 'generate' | 'summary' | 'timetable' | 'coursegrid') {
-    this.currentStep = step;
+  goToStep(step: 'import' | 'generate' | 'summary' | 'timetable' | 'coursegrid' | 'simpleschedule' | 'roomgrid'): void {
+  console.log('🔄 Navigating to step:', step);
+  this.currentStep = step;
+  
+  // Reset active day when going to steps with day tabs
+  if (step === 'roomgrid' || step === 'timetable' || step === 'coursegrid') {
+    this.activeDay = this.days[0] || 'Day 1';
   }
+  
+  this.cdr.detectChanges();
+}
 
   getTermYearLabel(termYearCode: string): string {
     if (!termYearCode) return 'Unknown';
@@ -1732,4 +1536,268 @@ calculateEnhancedSlotCost(
     this.toast = { title, description, variant };
     setTimeout(() => this.toast = null, 3000);
   }
+
+  viewSimpleSchedule() {
+  console.log('📋 viewSimpleSchedule() called');
+  console.log('📋 Schedule length:', this.generatedSchedule.length);
+  
+  if (this.generatedSchedule.length === 0) {
+    this.showToast('Error', 'No schedule data available', 'destructive');
+    return;
+  }
+  
+  // Prepare data
+  this.generateSimpleScheduleData();
+  
+  // Reset ALL filters
+  this.selectedCourse = 'ALL';
+  this.selectedYearLevel = 'ALL';
+  this.selectedDepartment = 'ALL';
+  this.selectedDay = 'ALL'; // 
+
+
+
+  
+  
+  // Navigate
+  this.currentStep = 'simpleschedule';
+  
+  // Force UI update
+  this.cdr.detectChanges();
+  
+  console.log('✅ Navigated to simple schedule view');
+}iewSimpleSchedule() {
+  console.log('📋 viewSimpleSchedule() called');
+  console.log('📋 Schedule length:', this.generatedSchedule.length);
+  
+  if (this.generatedSchedule.length === 0) {
+    this.showToast('Error', 'No schedule data available', 'destructive');
+    return;
+  }
+  
+  // Prepare data
+  this.generateSimpleScheduleData();
+  
+  // Reset filters
+  this.selectedCourse = 'ALL';
+  this.selectedYearLevel = 'ALL';
+  this.selectedDepartment = 'ALL';
+  
+  // Navigate
+  this.currentStep = 'simpleschedule';
+  
+  // Force UI update
+  this.cdr.detectChanges();
+  
+  console.log('✅ Navigated to simple schedule view');
+}
+
+
+clearFilters() {
+  this.selectedCourse = 'ALL';
+  this.selectedYearLevel = 'ALL';
+  this.selectedDepartment = 'ALL';
+  this.selectedDay = 'ALL';
+  this.onFilterChange();
+}
+
+generateSimpleScheduleData() {
+  this.generatedSchedule.sort((a, b) => {
+    const codeA = parseInt(a.CODE) || 0;
+    const codeB = parseInt(b.CODE) || 0;
+    return codeA - codeB;
+  });
+}
+
+getUniqueCourses(): string[] {
+  console.log('🔍 Getting unique courses...');
+  const courses = new Set<string>();
+  this.generatedSchedule.forEach(exam => {
+    if (exam.COURSE) courses.add(exam.COURSE);
+  });
+  const result = ['ALL', ...Array.from(courses).sort()];
+  console.log('✅ Unique courses:', result);
+  return result;
+}
+
+
+getUniqueYearLevels(): string[] {
+  console.log('🔍 Getting unique year levels...');
+  const years = new Set<string>();
+  this.generatedSchedule.forEach(exam => {
+    if (exam.YEAR_LEVEL) years.add(exam.YEAR_LEVEL.toString());
+  });
+  const result = ['ALL', ...Array.from(years).sort((a, b) => {
+    if (a === 'ALL') return -1;
+    if (b === 'ALL') return 1;
+    return parseInt(a) - parseInt(b);
+  })];
+  console.log('✅ Unique years:', result);
+  return result;
+}
+
+getFilteredSchedule(): ScheduledExam[] {
+  console.log('🔍 Filtering schedule...');
+  console.log('Selected Course:', this.selectedCourse);
+  console.log('Selected Year:', this.selectedYearLevel);
+  console.log('Selected Dept:', this.selectedDepartment);
+  console.log('Selected Day:', this.selectedDay);
+  console.log('Total schedule length:', this.generatedSchedule.length);
+  
+  const filtered = this.generatedSchedule.filter(exam => {
+    // Course filter
+    const courseMatch = this.selectedCourse === 'ALL' || exam.COURSE === this.selectedCourse;
+    
+    // Year level filter
+    const yearMatch = this.selectedYearLevel === 'ALL' || 
+                      exam.YEAR_LEVEL.toString() === this.selectedYearLevel ||
+                      exam.YEAR_LEVEL === parseInt(this.selectedYearLevel);
+    
+    // Department filter
+    const deptMatch = this.selectedDepartment === 'ALL' || exam.DEPT === this.selectedDepartment;
+    
+    // ✅ NEW: Day filter
+    const dayMatch = this.selectedDay === 'ALL' || exam.DAY === this.selectedDay;
+    
+    return courseMatch && yearMatch && deptMatch && dayMatch;
+  });
+  
+  console.log('✅ Filtered results:', filtered.length);
+  return filtered;
+}
+
+formatTimeForDisplay(slot: string): string {
+  const parts = slot.split('-');
+  if (parts.length !== 2) return slot;
+  
+  const formatTime = (time: string) => {
+    const [hours, mins] = time.split(':');
+    const h = parseInt(hours);
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const displayHour = h > 12 ? h - 12 : (h === 0 ? 12 : h);
+    // FIX: Don't pad single digit hours - it makes 3 PM look like 03 AM
+    return `${displayHour}:${mins}${ampm}`;
+  };
+  
+  return `${formatTime(parts[0])}-${formatTime(parts[1])}`;
+}
+
+onFilterChange() {
+  console.log('🔄 Filter changed!');
+  console.log('Current filters:', {
+    course: this.selectedCourse,
+    year: this.selectedYearLevel,
+    dept: this.selectedDepartment
+  });
+  this.cdr.detectChanges();
+}
+
+getDayName(day: string): string {
+  console.log('🔍 Getting day name for:', day);
+  
+  // Map Day 1, Day 2, Day 3 to actual exam dates
+  const dayIndex = this.days.indexOf(day);
+  
+  if (dayIndex === -1 || dayIndex >= this.examDates.length) {
+    console.warn('⚠️ Invalid day:', day);
+    return day;
+  }
+  
+  const examDate = this.examDates[dayIndex];
+  
+  if (!examDate) {
+    console.warn('⚠️ No exam date for day:', day);
+    return day;
+  }
+  
+  // Convert the date string to a Date object
+  const dateObj = new Date(examDate + 'T00:00:00'); // Add time to avoid timezone issues
+  
+  // Get the day name (e.g., "Monday")
+  const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+  
+  // Format the date (e.g., "01/27/2025")
+  const formattedDate = dateObj.toLocaleDateString('en-US', { 
+    month: '2-digit', 
+    day: '2-digit', 
+    year: 'numeric' 
+  });
+  
+  // Return format: "Monday, 01/27/2025"
+  const result = `${dayName}, ${formattedDate}`;
+  
+  console.log('✅ Converted', day, 'to:', result);
+  return result;
+}
+
+
+getExamDays(): { label: string, value: string }[] {
+  const options = [{ label: 'ALL DAYS', value: 'ALL' }];
+  
+  this.days.forEach((day, index) => {
+    if (this.examDates[index]) {
+      const dateObj = new Date(this.examDates[index] + 'T00:00:00');
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+      const formattedDate = dateObj.toLocaleDateString('en-US', { 
+        month: '2-digit', 
+        day: '2-digit',
+        year: 'numeric'
+      });
+      
+      options.push({
+        label: `${day} - ${dayName}, ${formattedDate}`,
+        value: day
+      });
+    } else {
+      options.push({
+        label: day,
+        value: day
+      });
+    }
+  });
+  
+  return options;
+}
+
+
+downloadSimpleScheduleExcel() {
+  const filtered = this.getFilteredSchedule();
+  
+  if (filtered.length === 0) {
+    this.showToast('Error', 'No data to export', 'destructive');
+    return;
+  }
+
+  const excelData = filtered.map(exam => ({
+    'Code No': exam.CODE,
+    'Subject ID': exam.SUBJECT_ID,
+    'Descriptive Title': exam.DESCRIPTIVE_TITLE,
+    'Course': exam.COURSE,
+    'Year Level': exam.YEAR_LEVEL,
+    'Day': this.getDayName(exam.DAY),
+    'Time': this.formatTimeForDisplay(exam.SLOT),
+    'Room': exam.ROOM,
+    'Instructor': exam.INSTRUCTOR,
+    'Department': exam.DEPT
+  }));
+
+  const ws: XLSX.WorkSheet = XLSX.utils.json_to_sheet(excelData);
+  
+  ws['!cols'] = [
+    { wch: 8 }, { wch: 12 }, { wch: 40 }, { wch: 12 }, { wch: 10 },
+    { wch: 8 }, { wch: 18 }, { wch: 10 }, { wch: 30 }, { wch: 12 }
+  ];
+
+  const wb: XLSX.WorkBook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Exam Schedule');
+
+  const fileName = this.selectedExamGroup 
+    ? `${this.selectedExamGroup.name}_Schedule.xlsx`
+    : 'Exam_Schedule.xlsx';
+
+  XLSX.writeFile(wb, fileName);
+  
+  this.showToast('Success', `Exported ${filtered.length} exams to Excel`);
+}
+
 }
